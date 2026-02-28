@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>신의 손길 - God Simulation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="hud">
+            <div id="hud-top">
+                <div id="world-info">
+                    <span id="year-display">1년</span>
+                    <span id="population-display">인구: 0</span>
+                    <span id="era-display">시대: 원시</span>
+                    <span id="happiness-display">행복도: 50%</span>
+                </div>
+                <div id="speed-controls">
+                    <button id="btn-pause" title="일시정지">⏸</button>
+                    <button id="btn-speed1" title="1배속" class="active">▶</button>
+                    <button id="btn-speed2" title="2배속">▶▶</button>
+                    <button id="btn-speed3" title="5배속">▶▶▶</button>
+                </div>
+            </div>
+            <div id="god-powers">
+                <h3>신의 권능</h3>
+                <div id="power-buttons">
+                    <button class="power-btn" data-power="sun" title="맑은 날씨">☀️ 맑음</button>
+                    <button class="power-btn" data-power="rain" title="비">🌧️ 비</button>
+                    <button class="power-btn" data-power="storm" title="폭풍">⛈️ 폭풍</button>
+                    <button class="power-btn" data-power="lightning" title="천둥번개">⚡ 번개</button>
+                    <button class="power-btn" data-power="wind" title="바람">💨 바람</button>
+                    <button class="power-btn" data-power="snow" title="눈">❄️ 눈</button>
+                    <button class="power-btn" data-power="earthquake" title="지진">🌋 지진</button>
+                    <button class="power-btn" data-power="bless" title="축복">✨ 축복</button>
+                    <button class="power-btn" data-power="plague" title="역병">☠️ 역병</button>
+                    <button class="power-btn" data-power="miracle" title="기적">🌟 기적</button>
+                </div>
+            </div>
+            <div id="info-panel" class="hidden">
+                <button id="close-info">✕</button>
+                <div id="info-content"></div>
+            </div>
+        </div>
+        <div id="minimap-container">
+            <canvas id="minimap-canvas" width="180" height="180"></canvas>
+        </div>
+        <div id="weather-overlay"></div>
+        <div id="notification-area"></div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
