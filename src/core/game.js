@@ -8,6 +8,7 @@ import { GodPowers } from '../powers/godPowers.js';
 import { SimulationEngine } from '../core/simulation.js';
 import { UIManager } from '../ui/uiManager.js';
 import { Minimap } from '../ui/minimap.js';
+import { SoundSystem } from '../ui/sound.js';
 
 export class Game {
     constructor(canvas) {
@@ -38,6 +39,7 @@ export class Game {
         this.renderer = new Renderer(this);
         this.ui = new UIManager(this);
         this.minimap = new Minimap(this);
+        this.sound = new SoundSystem();
 
         this.notifications = [];
     }

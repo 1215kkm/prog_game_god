@@ -84,6 +84,48 @@ export class GodPowers {
 
         this.cooldowns[this.activePower] = 60; // cooldown ticks
         this.game.simulation.faith += 2;
+
+        // Sound effects
+        const soundMap = {
+            rain: 'rain', storm: 'thunder', lightning: 'thunder',
+            wind: 'wind', earthquake: 'earthquake', bless: 'bless',
+            miracle: 'bless', plague: 'death',
+        };
+        if (soundMap[this.activePower]) {
+            this.game.sound.play(soundMap[this.activePower]);
+        }
+
+        // Particle effects
+        if (this.activePower === 'bless' || this.activePower === 'miracle') {
+            for (let i = 0; i < 15; i++) {
+                this.game.renderer.addParticle(
+                    worldX + (Math.random() - 0.5) * 8,
+                    worldY + (Math.random() - 0.5) * 8,
+                    'sparkle',
+                    { vy: -0.03, life: 40 + Math.random() * 30, size: 4 + Math.random() * 3 }
+                );
+            }
+        }
+        if (this.activePower === 'plague') {
+            for (let i = 0; i < 8; i++) {
+                this.game.renderer.addParticle(
+                    worldX + (Math.random() - 0.5) * 10,
+                    worldY + (Math.random() - 0.5) * 10,
+                    'skull',
+                    { vy: -0.02, life: 50 + Math.random() * 30, size: 5 }
+                );
+            }
+        }
+        if (this.activePower === 'lightning') {
+            for (let i = 0; i < 6; i++) {
+                this.game.renderer.addParticle(
+                    tileX + (Math.random() - 0.5) * 4,
+                    tileY + (Math.random() - 0.5) * 4,
+                    'fire',
+                    { vy: -0.01, life: 30 + Math.random() * 20, size: 4 }
+                );
+            }
+        }
     }
 
     strikeLightning(x, y) {

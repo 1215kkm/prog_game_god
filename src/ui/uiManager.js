@@ -49,6 +49,14 @@ export class UIManager {
         document.getElementById('close-info').addEventListener('click', () => {
             document.getElementById('info-panel').classList.add('hidden');
         });
+
+        // Sound toggle
+        document.getElementById('btn-sound').addEventListener('click', () => {
+            this.game.sound.init();
+            const on = this.game.sound.toggle();
+            document.getElementById('btn-sound').textContent = on ? '🔊' : '🔇';
+            this.game.sound.play('click');
+        });
     }
 
     update() {
@@ -65,6 +73,10 @@ export class UIManager {
             `시대: ${this.game.currentEra.name}`;
         document.getElementById('happiness-display').textContent =
             `행복도: ${Math.floor(sim.happiness)}%`;
+        document.getElementById('food-display').textContent =
+            `식량: ${Math.floor(sim.foodSupply)}`;
+        document.getElementById('resource-display').textContent =
+            `🪵${Math.floor(sim.resources.wood)} 🪨${Math.floor(sim.resources.stone)}`;
     }
 
     updateSpeedButtons(activeIdx) {
