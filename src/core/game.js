@@ -9,6 +9,8 @@ import { SimulationEngine } from '../core/simulation.js';
 import { UIManager } from '../ui/uiManager.js';
 import { Minimap } from '../ui/minimap.js';
 import { SoundSystem } from '../ui/sound.js';
+import { CinematicCamera } from '../ui/cinematicCamera.js';
+import { AmbientMode } from '../ui/ambientMode.js';
 
 export class Game {
     constructor(canvas) {
@@ -40,6 +42,8 @@ export class Game {
         this.ui = new UIManager(this);
         this.minimap = new Minimap(this);
         this.sound = new SoundSystem();
+        this.cinematicCamera = new CinematicCamera(this);
+        this.ambientMode = new AmbientMode(this);
 
         this.notifications = [];
     }
@@ -54,6 +58,7 @@ export class Game {
         this.entityManager.spawnInitialEntities();
         this.minimap.init();
         this.ui.init();
+        this.ambientMode.init();
         this.camera.centerOn(
             this.world.spawnPoint.x,
             this.world.spawnPoint.y
@@ -106,13 +111,17 @@ export class Game {
         this.entityManager.update();
         this.simulation.update();
         this.godPowers.updateCooldowns();
+        this.cinematicCamera.update();
+        this.ambientMode.update();
         this.ui.update();
     }
 
     render() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.renderer.render();
-        this.minimap.render();
+        if (!this.ambientMode.active) {
+            this.minimap.render();
+        }
     }
 
     get currentSeason() {
@@ -131,7 +140,7 @@ export class Game {
 
     get timeOfDay() {
         const dayTick = this.tick % TICKS_PER_DAY;
-        return dayTick / TICKS_PER_DAY; // 0-1, 0=midnight, 0.5=noon
+        return dayTick / TICKS_PER_DAY;
     }
 
     get isDaytime() {
@@ -141,12 +150,18 @@ export class Game {
 
     notify(message) {
         this.notifications.push({ message, time: Date.now() });
-        const area = document.getElementById('notification-area');
-        const el = document.createElement('div');
-        el.className = 'notification';
-        el.textContent = message;
-        area.appendChild(el);
-        setTimeout(() => el.remove(), 3000);
+
+        // Forward to ambient mode
+        this.ambientMode.onEvent(message);
+
+        if (!this.ambientMode.active) {
+            const area = document.getElementById('notification-area');
+            const el = document.createElement('div');
+            el.className = 'notification';
+            el.textContent = message;
+            area.appendChild(el);
+            setTimeout(() => el.remove(), 3000);
+        }
     }
 
     setSpeed(speed) {

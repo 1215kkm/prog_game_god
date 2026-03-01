@@ -57,6 +57,20 @@ export class UIManager {
             document.getElementById('btn-sound').textContent = on ? '🔊' : '🔇';
             this.game.sound.play('click');
         });
+
+        // Ambient mode toggle
+        document.getElementById('btn-ambient').addEventListener('click', () => {
+            this.game.ambientMode.toggle();
+        });
+
+        // Fullscreen toggle
+        document.getElementById('btn-fullscreen').addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen();
+            }
+        });
     }
 
     update() {
