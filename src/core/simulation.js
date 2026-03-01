@@ -11,6 +11,7 @@ export class SimulationEngine {
         this.faith = 0; // Belief in the god (player)
         this.techGrowthRate = 1;
         this.cultureGrowthRate = 1;
+        this.lastEraName = ERAS[0].name; // Track for era change detection
     }
 
     update() {
@@ -111,10 +112,10 @@ export class SimulationEngine {
         this.game.notify(`${this.game.year}년이 되었습니다.`);
 
         // Check for era change
-        const prevEra = this.game.currentEra;
-        const newEra = this.game.currentEra;
-        if (prevEra.name !== newEra.name) {
-            this.game.notify(`새로운 시대: ${newEra.name}!`);
+        const currentEra = this.game.currentEra;
+        if (this.lastEraName !== currentEra.name) {
+            this.game.notify(`새로운 시대가 열렸습니다: ${currentEra.name}!`);
+            this.lastEraName = currentEra.name;
         }
 
         // Population growth

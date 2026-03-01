@@ -33,7 +33,7 @@ export class World {
                 // Height with island bias (lower at edges)
                 const nx = x / this.width - 0.5;
                 const ny = y / this.height - 0.5;
-                const distFromCenter = 1 - Math.sqrt(nx * nx + ny * ny) * 2.2;
+                const distFromCenter = 1 - Math.sqrt(nx * nx + ny * ny) * 1.8;
                 const islandBias = Math.max(0, distFromCenter);
 
                 const h = fbm(x * 0.008, y * 0.008, 6) * 0.6
@@ -64,15 +64,15 @@ export class World {
                 const m = moistureMap[idx];
 
                 let terrain;
-                if (h < 0.15) terrain = TERRAIN.DEEP_WATER;
-                else if (h < 0.22) terrain = TERRAIN.SHALLOW_WATER;
-                else if (h < 0.26) terrain = TERRAIN.SAND;
-                else if (h < 0.55) {
+                if (h < 0.12) terrain = TERRAIN.DEEP_WATER;
+                else if (h < 0.18) terrain = TERRAIN.SHALLOW_WATER;
+                else if (h < 0.22) terrain = TERRAIN.SAND;
+                else if (h < 0.38) {
                     if (m > 0.6) terrain = TERRAIN.FOREST;
                     else terrain = TERRAIN.GRASS;
                 }
-                else if (h < 0.7) terrain = TERRAIN.HILL;
-                else if (h < 0.85) terrain = TERRAIN.MOUNTAIN;
+                else if (h < 0.46) terrain = TERRAIN.HILL;
+                else if (h < 0.55) terrain = TERRAIN.MOUNTAIN;
                 else terrain = TERRAIN.SNOW_PEAK;
 
                 this.tiles[idx] = terrain;

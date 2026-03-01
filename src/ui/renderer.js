@@ -236,7 +236,8 @@ export class Renderer {
 
             // Child indicator
             if (p.age < 15) {
-                ctx.fillStyle = 'rgba(255,255,0,0.5)';
+                ctx.strokeStyle = 'rgba(255,255,0,0.5)';
+                ctx.lineWidth = 0.5;
                 ctx.beginPath();
                 ctx.arc(sx, sy, size + 1, 0, Math.PI * 2);
                 ctx.stroke();
@@ -261,6 +262,8 @@ export class Renderer {
             ctx.beginPath();
             if (a.type === 'BIRD') {
                 // Bird: V shape
+                ctx.strokeStyle = a.color;
+                ctx.lineWidth = 1;
                 const bobY = Math.sin(this.game.tick * 0.1 + a.x) * 2;
                 ctx.moveTo(sx - 3, sy + bobY);
                 ctx.lineTo(sx, sy - 2 + bobY);

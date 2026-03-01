@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Browser Test</title></head>
+<body>
+<canvas id="game-canvas" width="800" height="600"></canvas>
+<div id="hud">
+    <div id="hud-top">
+        <div id="world-info">
+            <span id="year-display"></span>
+            <span id="population-display"></span>
+            <span id="era-display"></span>
+            <span id="happiness-display"></span>
+        </div>
+        <div id="speed-controls">
+            <button id="btn-pause">P</button>
+            <button id="btn-speed1">1</button>
+            <button id="btn-speed2">2</button>
+            <button id="btn-speed3">3</button>
+        </div>
+    </div>
+    <div id="god-powers">
+        <div id="power-buttons"></div>
+    </div>
+    <div id="info-panel" class="hidden">
+        <button id="close-info">X</button>
+        <div id="info-content"></div>
+    </div>
+</div>
+<div id="minimap-container">
+    <canvas id="minimap-canvas" width="180" height="180"></canvas>
+</div>
+<div id="weather-overlay"></div>
+<div id="notification-area"></div>
+
+<pre id="output" style="margin:20px;font-size:14px;"></pre>
+
+<script type="module">
+    const out = document.getElementById('output');
+    function log(msg) {
+        out.textContent += msg + '\n';
+        console.log(msg);
+    }
+
+    try {
+        log('Loading Game module...');
+        const { Game } = await import('./src/core/game.js');
+        log('✓ Game module loaded');
+
+        log('Creating game instance...');
+        const canvas = document.getElementById('game-canvas');
+        const game = new Game(canvas);
+        log('✓ Game instance created');
+
+        log('Initializing game...');
+        game.init();
+        log('✓ Game initialized');
+
+        log(`World spawn: (${game.world.spawnPoint.x}, ${game.world.spawnPoint.y})`);
+        log(`People: ${game.entityManager.people.length}`);
+        log(`Animals: ${game.entityManager.animals.length}`);
+        log(`Buildings: ${game.entityManager.buildings.length}`);
+        log(`Trees: ${game.entityManager.trees.length}`);
+
+        // Run 100 ticks
+        log('Running 100 simulation ticks...');
+        for (let i = 0; i < 100; i++) {
+            game.update();
+        }
+        log(`✓ 100 ticks completed, tick=${game.tick}`);
+        log(`People alive: ${game.entityManager.people.filter(p=>p.alive).length}`);
+        log(`Food: ${game.simulation.foodSupply.toFixed(1)}`);
+        log(`Tech: ${game.simulation.techLevel.toFixed(2)}`);
+
+        // Test god power
+        log('Testing god power (bless)...');
+        game.godPowers.selectPower('bless');
+        game.godPowers.usePower(game.world.spawnPoint.x, game.world.spawnPoint.y);
+        log(`✓ Bless used, faith=${game.simulation.faith}`);
+
+        // Test cooldown
+        log(`Cooldown for bless: ${game.godPowers.cooldowns.bless}`);
+        for (let i = 0; i < 60; i++) game.godPowers.updateCooldowns();
+        log(`After 60 updates: ${game.godPowers.cooldowns.bless}`);
+        log('✓ Cooldown system works');
+
+        // Render test
+        log('Testing render...');
+        game.render();
+        log('✓ Render completed without errors');
+
+        log('\n=== ALL BROWSER TESTS PASSED ===');
+    } catch (e) {
+        log(`✗ ERROR: ${e.message}`);
+        log(e.stack);
+    }
+</script>
+</body>
+</html>

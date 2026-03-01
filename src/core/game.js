@@ -63,21 +63,21 @@ export class Game {
     }
 
     loop(timestamp) {
-        if (!this.running) {
-            requestAnimationFrame((t) => this.loop(t));
-            return;
-        }
-
         const delta = timestamp - this.lastTime;
         this.lastTime = timestamp;
 
-        this.accumulator += delta * this.speed;
+        if (this.running) {
+            this.accumulator += delta * this.speed;
 
-        let updated = false;
-        while (this.accumulator >= this.tickRate) {
-            this.update();
-            this.accumulator -= this.tickRate;
-            updated = true;
+            // Cap accumulator to prevent spiral of death
+            if (this.accumulator > this.tickRate * 10) {
+                this.accumulator = this.tickRate * 10;
+            }
+
+            while (this.accumulator >= this.tickRate) {
+                this.update();
+                this.accumulator -= this.tickRate;
+            }
         }
 
         this.render();
@@ -103,6 +103,7 @@ export class Game {
         this.weather.update();
         this.entityManager.update();
         this.simulation.update();
+        this.godPowers.updateCooldowns();
         this.ui.update();
     }
 
