@@ -1,5 +1,5 @@
 // Ambient Display Mode - for big monitors as decorative/screensaver use
-// Hides game HUD, shows minimal elegant info overlay, auto-plays everything
+// Premium digital aquarium experience: elegant overlays, auto-play, BGM
 
 export class AmbientMode {
     constructor(game) {
@@ -12,6 +12,11 @@ export class AmbientMode {
         this.eventQueue = [];
         this.idleTimer = 0;
         this.IDLE_TIMEOUT = 1800; // 60 seconds at 30fps -> auto-enable
+
+        // Burn-in prevention
+        this.burnInTimer = 0;
+        this.overlayDriftX = 0;
+        this.overlayDriftY = 0;
     }
 
     init() {
@@ -26,50 +31,97 @@ export class AmbientMode {
             <div id="ambient-top-info">
                 <span id="ambient-year"></span>
                 <span id="ambient-season"></span>
+                <span id="ambient-clock"></span>
             </div>
             <div id="ambient-subtitle"></div>
+            <div id="ambient-center-event"></div>
             <div id="ambient-stats">
                 <span id="ambient-pop"></span>
                 <span id="ambient-era"></span>
             </div>
-            <div id="ambient-hint">클릭하여 돌아가기</div>
+            <div id="ambient-hint">A: 게임 모드  ·  F: 전체화면  ·  더블클릭: 전환</div>
         `;
         this.overlay.style.cssText = `
             position:fixed; top:0; left:0; width:100%; height:100%;
             pointer-events:none; z-index:100; display:none;
-            font-family: 'Georgia', serif;
+            font-family: 'Georgia', 'Noto Serif KR', serif;
         `;
 
         // Styles for ambient overlay elements
         const style = document.createElement('style');
         style.textContent = `
-            #ambient-overlay { transition: opacity 1s; }
+            #ambient-overlay {
+                transition: opacity 1.5s ease-in-out;
+            }
             #ambient-top-info {
                 position:absolute; top:30px; left:50%; transform:translateX(-50%);
-                display:flex; gap:20px; font-size:20px; color:rgba(255,255,255,0.6);
-                text-shadow: 0 2px 8px rgba(0,0,0,0.8);
-                letter-spacing: 3px;
+                display:flex; gap:24px; font-size:18px; color:rgba(255,255,255,0.5);
+                text-shadow: 0 2px 12px rgba(0,0,0,0.9);
+                letter-spacing: 4px;
+                font-weight: 300;
+                transition: transform 8s ease-in-out;
+            }
+            #ambient-clock {
+                font-variant-numeric: tabular-nums;
+                font-family: 'SF Mono', 'Consolas', monospace;
+                font-size: 15px;
+                opacity: 0.4;
+                letter-spacing: 2px;
             }
             #ambient-subtitle {
-                position:absolute; bottom:100px; left:50%; transform:translateX(-50%);
-                font-size:18px; color:rgba(255,215,0,0.8);
-                text-shadow: 0 2px 10px rgba(0,0,0,0.9);
-                letter-spacing: 2px;
-                transition: opacity 0.8s;
-                max-width: 80%;
+                position:absolute; bottom:120px; left:50%; transform:translateX(-50%);
+                font-size:22px; color:rgba(255,215,0,0.75);
+                text-shadow: 0 2px 16px rgba(0,0,0,0.95), 0 0 40px rgba(255,215,0,0.1);
+                letter-spacing: 3px;
+                transition: opacity 1.2s ease-in-out;
+                max-width: 70%;
                 text-align:center;
+                line-height: 1.6;
+                font-weight: 300;
+            }
+            #ambient-center-event {
+                position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                font-size:36px; color:rgba(255,255,255,0);
+                text-shadow: 0 4px 20px rgba(0,0,0,0.95);
+                letter-spacing: 6px;
+                transition: color 2s ease-in-out, transform 2s ease-in-out;
+                text-align:center;
+                font-weight: 300;
+                pointer-events:none;
+            }
+            #ambient-center-event.show {
+                color:rgba(255,215,0,0.6);
+                transform:translate(-50%,-50%) scale(1.05);
             }
             #ambient-stats {
-                position:absolute; bottom:40px; left:50%; transform:translateX(-50%);
-                display:flex; gap:30px; font-size:14px; color:rgba(255,255,255,0.35);
-                text-shadow: 0 1px 4px rgba(0,0,0,0.8);
-                letter-spacing: 2px;
+                position:absolute; bottom:50px; left:50%; transform:translateX(-50%);
+                display:flex; gap:40px; font-size:13px; color:rgba(255,255,255,0.25);
+                text-shadow: 0 1px 6px rgba(0,0,0,0.9);
+                letter-spacing: 3px;
+                font-weight: 300;
+                transition: transform 8s ease-in-out;
             }
             #ambient-hint {
-                position:absolute; bottom:15px; left:50%; transform:translateX(-50%);
-                font-size:11px; color:rgba(255,255,255,0.15);
-                font-family: sans-serif;
-                letter-spacing: 1px;
+                position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+                font-size:11px; color:rgba(255,255,255,0.1);
+                font-family: 'Segoe UI', sans-serif;
+                letter-spacing: 2px;
+                transition: opacity 0.5s;
+            }
+            #ambient-overlay:hover #ambient-hint {
+                opacity: 1;
+            }
+
+            /* Ambient mode transition animations */
+            @keyframes ambientFadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes ambientSubtitleIn {
+                0% { opacity: 0; transform: translateX(-50%) translateY(8px); }
+                15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+                85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+                100% { opacity: 0; transform: translateX(-50%) translateY(-8px); }
             }
         `;
         document.head.appendChild(style);
@@ -116,6 +168,11 @@ export class AmbientMode {
             game.godPowers.activePower = null;
             game.canvas.style.cursor = 'none';
             this.showSubtitle('관상 모드');
+
+            // Start ambient BGM
+            if (game.sound && game.sound.initialized) {
+                game.sound.startBGM();
+            }
         } else {
             // Exit ambient mode
             document.getElementById('hud').style.display = '';
@@ -124,6 +181,11 @@ export class AmbientMode {
             game.cinematicCamera.enabled = false;
             game.setSpeed(1);
             game.canvas.style.cursor = 'grab';
+
+            // Stop ambient BGM
+            if (game.sound) {
+                game.sound.stopBGM();
+            }
         }
 
         return this.active;
@@ -148,25 +210,47 @@ export class AmbientMode {
         }
 
         this.subtitleTimer++;
+        this.burnInTimer++;
+
+        // Burn-in prevention: slowly drift overlay position every 5 minutes
+        if (this.burnInTimer % 9000 === 0) { // 300 seconds at 30fps
+            this.overlayDriftX = (Math.random() - 0.5) * 20;
+            this.overlayDriftY = (Math.random() - 0.5) * 10;
+
+            const topInfo = document.getElementById('ambient-top-info');
+            const stats = document.getElementById('ambient-stats');
+            if (topInfo) topInfo.style.transform = `translateX(calc(-50% + ${this.overlayDriftX}px))`;
+            if (stats) stats.style.transform = `translateX(calc(-50% + ${this.overlayDriftX}px))`;
+        }
 
         // Update ambient info
         if (this.subtitleTimer % 15 === 0) {
             const game = this.game;
-            const sim = game.simulation;
             const dayProgress = game.timeOfDay;
-            const timeStr = dayProgress < 0.25 ? '밤' :
-                           dayProgress < 0.35 ? '새벽' :
-                           dayProgress < 0.65 ? '낮' :
-                           dayProgress < 0.75 ? '저녁' : '밤';
+            const timeStr = dayProgress < 0.2 ? '밤' :
+                           dayProgress < 0.28 ? '새벽' :
+                           dayProgress < 0.72 ? '낮' :
+                           dayProgress < 0.82 ? '저녁' : '밤';
 
-            document.getElementById('ambient-year').textContent =
-                `${game.year}년`;
-            document.getElementById('ambient-season').textContent =
-                `${game.currentSeason} · ${timeStr}`;
-            document.getElementById('ambient-pop').textContent =
-                `인구 ${game.entityManager.people.length}`;
-            document.getElementById('ambient-era').textContent =
-                game.currentEra.name;
+            // Game world time
+            const yearEl = document.getElementById('ambient-year');
+            const seasonEl = document.getElementById('ambient-season');
+            const clockEl = document.getElementById('ambient-clock');
+            const popEl = document.getElementById('ambient-pop');
+            const eraEl = document.getElementById('ambient-era');
+
+            if (yearEl) yearEl.textContent = `${game.year}년`;
+            if (seasonEl) seasonEl.textContent = `${game.currentSeason} · ${timeStr}`;
+            if (popEl) popEl.textContent = `인구 ${game.entityManager.people.length}`;
+            if (eraEl) eraEl.textContent = game.currentEra.name;
+
+            // Real-world clock
+            if (clockEl) {
+                const now = new Date();
+                const h = String(now.getHours()).padStart(2, '0');
+                const m = String(now.getMinutes()).padStart(2, '0');
+                clockEl.textContent = `${h}:${m}`;
+            }
         }
 
         // Show event-based subtitles
@@ -177,14 +261,24 @@ export class AmbientMode {
 
     showSubtitle(text) {
         const el = document.getElementById('ambient-subtitle');
+        if (!el) return;
         el.style.opacity = '0';
         setTimeout(() => {
             el.textContent = text;
             el.style.opacity = '1';
-        }, 400);
+        }, 600);
         setTimeout(() => {
             el.style.opacity = '0';
-        }, 4000);
+        }, 5000);
+    }
+
+    // Show a big center event (for major events like era changes)
+    showCenterEvent(text) {
+        const el = document.getElementById('ambient-center-event');
+        if (!el) return;
+        el.textContent = text;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 4000);
     }
 
     showRandomSubtitle() {
@@ -206,9 +300,25 @@ export class AmbientMode {
                 sleeping: '깊은 잠에 빠져 있다',
                 socializing: '이웃과 대화를 나누고 있다',
                 gathering: '자원을 모으고 있다',
+                building: '건물을 짓고 있다',
+                fleeing: '무언가로부터 도망치고 있다',
             };
             const stateText = stateTexts[p.state] || '살아가고 있다';
-            subtitles.push(`${p.name}(${Math.floor(p.age)}세)이(가) ${stateText}`);
+            subtitles.push(`${p.name} (${Math.floor(p.age)}세)  ─  ${stateText}`);
+        }
+
+        // Relationships
+        if (people.length > 0) {
+            const married = people.filter(p => p.spouse);
+            if (married.length > 0) {
+                const p = married[Math.floor(Math.random() * married.length)];
+                subtitles.push(`${p.name}과(와) ${p.spouse}의 일상이 계속된다`);
+            }
+            const children = people.filter(p => p.age < 15);
+            if (children.length > 0) {
+                const c = children[Math.floor(Math.random() * children.length)];
+                subtitles.push(`어린 ${c.name}이(가) 세상을 탐험하고 있다`);
+            }
         }
 
         // Weather-based
@@ -221,6 +331,18 @@ export class AmbientMode {
         };
         if (weatherTexts[game.weather.current]) {
             subtitles.push(weatherTexts[game.weather.current]);
+        }
+
+        // Time-based
+        const dayProgress = game.timeOfDay;
+        if (dayProgress > 0.2 && dayProgress < 0.28) {
+            subtitles.push('동이 트고, 새로운 하루가 시작된다');
+        }
+        if (dayProgress > 0.72 && dayProgress < 0.78) {
+            subtitles.push('해가 지고, 마을에 불빛이 하나둘 켜진다');
+        }
+        if (dayProgress < 0.15 || dayProgress > 0.85) {
+            subtitles.push('별빛 아래 세상이 잠든다');
         }
 
         // Season-based
@@ -239,14 +361,22 @@ export class AmbientMode {
         if (people.length > 20) {
             subtitles.push(`${people.length}명의 주민이 이 땅에서 살아가고 있다`);
         }
+        if (em.buildings.length > 5) {
+            subtitles.push(`${em.buildings.length}채의 건물이 마을을 이루고 있다`);
+        }
 
-        // Poetic
+        // Poetic / philosophical
         const poetic = [
             '시간은 흐르고, 세상은 변한다',
             '작은 존재들의 커다란 이야기',
             '신의 눈으로 바라본 세상',
             '모든 생명은 의미가 있다',
             '자연과 문명, 그 사이의 균형',
+            '흙에서 왔다가 흙으로 돌아가는 것들',
+            '무한한 시간 속의 찰나',
+            '나무 한 그루가 자라는 데 백 년이 걸린다',
+            '강은 바다로 흘러가고, 구름은 비가 되어 돌아온다',
+            '역사는 기억하는 자의 것이다',
         ];
         subtitles.push(poetic[Math.floor(Math.random() * poetic.length)]);
 
@@ -258,7 +388,12 @@ export class AmbientMode {
     // Called from game notify system to capture events for ambient display
     onEvent(message) {
         if (this.active) {
-            this.showSubtitle(message);
+            // Major events get center display
+            if (message.includes('시대가 열렸') || message.includes('창조')) {
+                this.showCenterEvent(message);
+            } else {
+                this.showSubtitle(message);
+            }
         }
     }
 }

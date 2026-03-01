@@ -33,16 +33,24 @@ export class Renderer {
         ctx.translate(-cam.x, -cam.y);
 
         this.renderTerrain();
+        this.renderWaterShimmer();
         this.renderTerrainDetails();
         this.renderTrees();
         this.renderBuildings();
+        this.renderBuildingSmoke();
         this.renderAnimals();
         this.renderPeople();
         this.renderParticles();
         this.renderWeatherParticles();
+        this.renderFireflies();
         this.renderDayNightOverlay();
 
         ctx.restore();
+
+        // Post-processing (screen space)
+        if (this.game.ambientMode && this.game.ambientMode.active) {
+            this.renderVignette();
+        }
     }
 
     // ===== TERRAIN =====
@@ -533,6 +541,133 @@ export class Renderer {
         }
     }
 
+    // ===== WATER SHIMMER (ambient enhancement) =====
+    renderWaterShimmer() {
+        const ctx = this.ctx;
+        const cam = this.game.camera;
+        const world = this.game.world;
+        const { startX, startY, endX, endY } = cam.getVisibleTileRange();
+        const tick = this.game.tick;
+
+        // Only render shimmer when somewhat zoomed
+        if (cam.zoom < 0.5) return;
+
+        for (let y = Math.max(0, startY); y < Math.min(world.height, endY); y += 2) {
+            for (let x = Math.max(0, startX); x < Math.min(world.width, endX); x += 2) {
+                const terrain = world.getTerrain(x, y);
+                if (terrain !== TERRAIN.DEEP_WATER && terrain !== TERRAIN.SHALLOW_WATER) continue;
+
+                const px = x * TILE_SIZE;
+                const py = y * TILE_SIZE;
+
+                // Animated light reflection on water
+                const shimmer = Math.sin(tick * 0.03 + x * 0.7 + y * 0.5) *
+                               Math.cos(tick * 0.02 + x * 0.3 - y * 0.4);
+
+                if (shimmer > 0.5) {
+                    const alpha = (shimmer - 0.5) * 0.3;
+                    ctx.fillStyle = `rgba(200,230,255,${alpha})`;
+                    const sx = 2 + Math.sin(tick * 0.04 + x) * 2;
+                    const sy = 2 + Math.cos(tick * 0.03 + y) * 2;
+                    ctx.fillRect(px + sx, py + sy, 3, 1);
+                }
+
+                // Secondary shimmer spot
+                const shimmer2 = Math.sin(tick * 0.025 + x * 1.1 + y * 0.8);
+                if (shimmer2 > 0.7) {
+                    const alpha = (shimmer2 - 0.7) * 0.25;
+                    ctx.fillStyle = `rgba(255,255,240,${alpha})`;
+                    ctx.fillRect(px + 12 + Math.sin(tick * 0.05) * 3, py + 8, 2, 1);
+                }
+            }
+        }
+    }
+
+    // ===== BUILDING SMOKE (ambient life detail) =====
+    renderBuildingSmoke() {
+        const ctx = this.ctx;
+        const cam = this.game.camera;
+        const tick = this.game.tick;
+        const { startX, startY, endX, endY } = cam.getVisibleTileRange();
+
+        // Only when zoomed in enough
+        if (cam.zoom < 0.7) return;
+
+        for (const b of this.game.entityManager.buildings) {
+            if (b.x + b.size < startX || b.x > endX || b.y + b.size < startY || b.y > endY) continue;
+
+            // Only certain buildings emit smoke
+            const smokeTypes = ['WORKSHOP', 'FACTORY', 'HUT'];
+            if (!smokeTypes.includes(b.buildingType)) continue;
+
+            const bx = (b.x + b.size * 0.7) * TILE_SIZE;
+            const by = b.y * TILE_SIZE;
+
+            // Animated smoke puffs
+            for (let i = 0; i < 3; i++) {
+                const age = ((tick + i * 40) % 120) / 120; // 0→1 lifecycle
+                if (age > 0.95) continue;
+
+                const smokeX = bx + Math.sin(tick * 0.01 + i * 2) * 4 * age;
+                const smokeY = by - 8 - age * 20;
+                const size = 2 + age * 4;
+                const alpha = Math.max(0, 0.15 * (1 - age));
+
+                ctx.fillStyle = `rgba(180,180,180,${alpha})`;
+                ctx.beginPath();
+                ctx.arc(smokeX, smokeY, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    // ===== FIREFLIES (night ambient effect) =====
+    renderFireflies() {
+        const ctx = this.ctx;
+        const cam = this.game.camera;
+        const timeOfDay = this.game.timeOfDay;
+        const tick = this.game.tick;
+
+        // Only at night / dusk / dawn
+        if (timeOfDay > 0.25 && timeOfDay < 0.72) return;
+
+        const viewW = this.game.canvas.width / cam.zoom;
+        const viewH = this.game.canvas.height / cam.zoom;
+
+        // Generate stable firefly positions based on camera area
+        const count = this.game.ambientMode && this.game.ambientMode.active ? 25 : 10;
+        for (let i = 0; i < count; i++) {
+            // Pseudo-random but stable positions using index-based seeds
+            const seed1 = Math.sin(i * 127.1 + 311.7) * 43758.5453;
+            const seed2 = Math.sin(i * 269.5 + 183.3) * 43758.5453;
+            const baseX = cam.x + (seed1 - Math.floor(seed1)) * viewW;
+            const baseY = cam.y + (seed2 - Math.floor(seed2)) * viewH;
+
+            // Floating motion
+            const fx = baseX + Math.sin(tick * 0.008 + i * 1.7) * 8;
+            const fy = baseY + Math.cos(tick * 0.006 + i * 2.3) * 6;
+
+            // Pulsing glow
+            const pulse = Math.sin(tick * 0.03 + i * 0.8);
+            if (pulse < 0.2) continue; // Blink off sometimes
+
+            const alpha = pulse * 0.5;
+            const glowSize = 3 + pulse * 3;
+
+            // Glow
+            const grd = ctx.createRadialGradient(fx, fy, 0, fx, fy, glowSize);
+            grd.addColorStop(0, `rgba(200,255,100,${alpha})`);
+            grd.addColorStop(0.5, `rgba(150,255,50,${alpha * 0.3})`);
+            grd.addColorStop(1, 'rgba(100,200,50,0)');
+            ctx.fillStyle = grd;
+            ctx.fillRect(fx - glowSize, fy - glowSize, glowSize * 2, glowSize * 2);
+
+            // Core bright dot
+            ctx.fillStyle = `rgba(255,255,200,${alpha * 0.8})`;
+            ctx.fillRect(fx - 0.5, fy - 0.5, 1, 1);
+        }
+    }
+
     // ===== DAY/NIGHT =====
     renderDayNightOverlay() {
         const ctx = this.ctx;
@@ -543,17 +678,19 @@ export class Renderer {
         let alpha = 0;
 
         if (timeOfDay < 0.2 || timeOfDay > 0.82) {
-            // Night
-            overlayColor = '10,10,40';
-            alpha = 0.35;
+            // Night - deeper blue for ambient beauty
+            overlayColor = '8,8,35';
+            alpha = 0.4;
         } else if (timeOfDay < 0.28) {
-            // Dawn
-            overlayColor = '60,30,20';
-            alpha = 0.15 * (1 - (timeOfDay - 0.2) / 0.08);
+            // Dawn - warm golden tones
+            const t = (timeOfDay - 0.2) / 0.08;
+            overlayColor = `${60 - t * 40},${30 + t * 10},${20 + t * 10}`;
+            alpha = 0.2 * (1 - t);
         } else if (timeOfDay > 0.72) {
-            // Dusk
-            overlayColor = '50,20,30';
-            alpha = 0.15 * ((timeOfDay - 0.72) / 0.1);
+            // Dusk - warm orange/purple
+            const t = (timeOfDay - 0.72) / 0.1;
+            overlayColor = `${40 + t * 20},${15 + t * 5},${30 + t * 10}`;
+            alpha = 0.2 * t;
         }
 
         if (overlayColor && alpha > 0) {
@@ -562,5 +699,37 @@ export class Renderer {
                 this.game.canvas.width / cam.zoom,
                 this.game.canvas.height / cam.zoom);
         }
+
+        // Stars at night (world-space)
+        if (timeOfDay < 0.18 || timeOfDay > 0.84) {
+            const nightAlpha = timeOfDay < 0.18
+                ? 1 - timeOfDay / 0.18
+                : (timeOfDay - 0.84) / 0.16;
+
+            for (let i = 0; i < 40; i++) {
+                const sx = cam.x + ((i * 137.3 + 47.1) % 1.0) * (this.game.canvas.width / cam.zoom);
+                const sy = cam.y + ((i * 241.7 + 93.5) % 1.0) * (this.game.canvas.height / cam.zoom * 0.4);
+                const twinkle = Math.sin(this.game.tick * 0.02 + i * 1.5) * 0.3 + 0.7;
+                const starAlpha = nightAlpha * twinkle * 0.4;
+                ctx.fillStyle = `rgba(255,255,240,${starAlpha})`;
+                const size = (i % 3 === 0) ? 1.5 : 0.8;
+                ctx.fillRect(sx, sy, size, size);
+            }
+        }
+    }
+
+    // ===== VIGNETTE (screen-space, ambient mode only) =====
+    renderVignette() {
+        const ctx = this.ctx;
+        const w = this.game.canvas.width;
+        const h = this.game.canvas.height;
+
+        // Dark vignette around edges for cinematic look
+        const grd = ctx.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.7);
+        grd.addColorStop(0, 'rgba(0,0,0,0)');
+        grd.addColorStop(0.7, 'rgba(0,0,0,0)');
+        grd.addColorStop(1, 'rgba(0,0,0,0.4)');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, w, h);
     }
 }

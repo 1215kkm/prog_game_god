@@ -111,4 +111,33 @@ function showTitleScreen() {
     drawTitle();
 }
 
-window.addEventListener('DOMContentLoaded', showTitleScreen);
+window.addEventListener('DOMContentLoaded', () => {
+    // Support URL parameter for auto-ambient mode: index.html?ambient=true
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('ambient') === 'true') {
+        // Skip title screen, go directly to ambient mode
+        const canvas = document.getElementById('game-canvas');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        document.getElementById('hud').style.display = 'none';
+        document.getElementById('minimap-container').style.display = 'none';
+
+        const game = new Game(canvas);
+        game.sound.init();
+        game.init();
+        setTimeout(() => game.ambientMode.toggle(), 300);
+        window.game = game;
+
+        // Enable audio on first interaction
+        const enableAudio = () => {
+            game.sound.resume();
+            if (game.sound.startBGM) game.sound.startBGM();
+            document.removeEventListener('click', enableAudio);
+            document.removeEventListener('touchstart', enableAudio);
+        };
+        document.addEventListener('click', enableAudio);
+        document.addEventListener('touchstart', enableAudio);
+    } else {
+        showTitleScreen();
+    }
+});
