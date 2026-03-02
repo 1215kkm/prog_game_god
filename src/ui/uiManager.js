@@ -79,6 +79,33 @@ export class UIManager {
         const sim = this.game.simulation;
         const em = this.game.entityManager;
 
+        // Time of day icon
+        const t = this.game.timeOfDay;
+        const timeIcon = document.getElementById('time-icon');
+        const timeLabel = document.getElementById('time-label');
+        const timeIndicator = document.getElementById('time-indicator');
+        if (t < 0.2 || t > 0.82) {
+            timeIcon.textContent = '🌙';
+            timeLabel.textContent = '밤';
+            timeIndicator.style.background = 'rgba(20,20,60,0.6)';
+            timeIndicator.style.borderColor = 'rgba(100,120,200,0.4)';
+        } else if (t < 0.28) {
+            timeIcon.textContent = '🌅';
+            timeLabel.textContent = '새벽';
+            timeIndicator.style.background = 'rgba(60,30,20,0.5)';
+            timeIndicator.style.borderColor = 'rgba(255,150,50,0.4)';
+        } else if (t > 0.72) {
+            timeIcon.textContent = '🌇';
+            timeLabel.textContent = '저녁';
+            timeIndicator.style.background = 'rgba(60,20,30,0.5)';
+            timeIndicator.style.borderColor = 'rgba(255,100,50,0.4)';
+        } else {
+            timeIcon.textContent = '☀️';
+            timeLabel.textContent = '낮';
+            timeIndicator.style.background = 'rgba(0,0,0,0.4)';
+            timeIndicator.style.borderColor = 'rgba(255,255,255,0.15)';
+        }
+
         document.getElementById('year-display').textContent =
             `${this.game.year}년 ${this.game.currentSeason}`;
         document.getElementById('population-display').textContent =

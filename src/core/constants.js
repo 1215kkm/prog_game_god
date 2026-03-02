@@ -1,5 +1,5 @@
 // World
-export const TILE_SIZE = 24;
+export const TILE_SIZE = 32;
 export const WORLD_WIDTH = 200;
 export const WORLD_HEIGHT = 200;
 
@@ -18,16 +18,16 @@ export const TERRAIN = {
 };
 
 export const TERRAIN_COLORS = {
-    [TERRAIN.DEEP_WATER]: '#1a3a6e',
-    [TERRAIN.SHALLOW_WATER]: '#2e6b9e',
-    [TERRAIN.SAND]: '#d4c08a',
-    [TERRAIN.GRASS]: '#4a8c3f',
-    [TERRAIN.FOREST]: '#2d6b2e',
-    [TERRAIN.HILL]: '#7a8c5a',
-    [TERRAIN.MOUNTAIN]: '#8a8a8a',
-    [TERRAIN.SNOW_PEAK]: '#e8e8f0',
-    [TERRAIN.FARMLAND]: '#8aaa40',
-    [TERRAIN.ROAD]: '#9a8a6a',
+    [TERRAIN.DEEP_WATER]: '#1a4080',
+    [TERRAIN.SHALLOW_WATER]: '#3078aa',
+    [TERRAIN.SAND]: '#dcc88a',
+    [TERRAIN.GRASS]: '#5a9a48',
+    [TERRAIN.FOREST]: '#357035',
+    [TERRAIN.HILL]: '#7a9058',
+    [TERRAIN.MOUNTAIN]: '#8a8890',
+    [TERRAIN.SNOW_PEAK]: '#eaeaf4',
+    [TERRAIN.FARMLAND]: '#8aaa42',
+    [TERRAIN.ROAD]: '#a09070',
 };
 
 // Seasons

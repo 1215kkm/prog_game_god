@@ -5,7 +5,7 @@ export class Camera {
         this.game = game;
         this.x = 0;
         this.y = 0;
-        this.zoom = 1.5;
+        this.zoom = 1.2;
         this.minZoom = 0.3;
         this.maxZoom = 4;
 

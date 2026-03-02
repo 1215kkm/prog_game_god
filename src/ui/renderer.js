@@ -18,6 +18,15 @@ export class Renderer {
 
         // Particle system
         this.particles = [];
+
+        // Shockwave / ring effects for god powers
+        this.shockwaves = [];
+
+        // Screen flash effects
+        this.screenFlash = { alpha: 0, color: '255,255,255' };
+
+        // God power glow points (persistent for a while)
+        this.glowPoints = [];
     }
 
     render() {
@@ -35,17 +44,27 @@ export class Renderer {
         this.renderTerrain();
         this.renderWaterShimmer();
         this.renderTerrainDetails();
+        this.renderShadows();
         this.renderTrees();
         this.renderBuildings();
+        this.renderVehicles();
         this.renderBuildingSmoke();
         this.renderAnimals();
         this.renderPeople();
         this.renderParticles();
+        this.renderShockwaves();
+        this.renderGlowPoints();
         this.renderWeatherParticles();
         this.renderFireflies();
         this.renderDayNightOverlay();
 
         ctx.restore();
+
+        // Screen flash (screen space)
+        this.renderScreenFlash();
+
+        // Diorama edge (always active for miniature world feel)
+        this.renderDioramaEdge();
 
         // Post-processing (screen space)
         if (this.game.ambientMode && this.game.ambientMode.active) {
@@ -75,76 +94,158 @@ export class Renderer {
         const world = this.game.world;
         const { startX, startY, endX, endY } = cam.getVisibleTileRange();
 
-        // Only render details when zoomed in enough
-        if (cam.zoom < 0.8) return;
+        if (cam.zoom < 0.5) return;
+        const T = TILE_SIZE;
 
         for (let y = Math.max(0, startY); y < Math.min(world.height, endY); y++) {
             for (let x = Math.max(0, startX); x < Math.min(world.width, endX); x++) {
                 const terrain = world.getTerrain(x, y);
-                const px = x * TILE_SIZE;
-                const py = y * TILE_SIZE;
+                const px = x * T;
+                const py = y * T;
+                const hash = ((x * 374761393 + y * 668265263) >>> 0) % 100;
+                const hash2 = ((x * 127849 + y * 893521) >>> 0) % 100;
 
-                // Grass detail - small tufts
+                // Grass - rich detail with tufts, flowers, small stones
                 if (terrain === TERRAIN.GRASS) {
-                    const hash = (x * 7 + y * 13) % 5;
-                    if (hash === 0) {
-                        ctx.fillStyle = 'rgba(60,120,40,0.3)';
-                        ctx.fillRect(px + 4, py + 8, 2, 3);
-                        ctx.fillRect(px + 14, py + 4, 2, 3);
+                    // Grass tufts (varied sizes)
+                    if (hash < 30) {
+                        const shade = hash < 15 ? 'rgba(50,110,35,0.35)' : 'rgba(70,140,50,0.25)';
+                        ctx.fillStyle = shade;
+                        const tx = px + (hash2 % 20) + 2;
+                        const ty = py + (hash % 18) + 4;
+                        ctx.fillRect(tx, ty, 2, 4);
+                        ctx.fillRect(tx + 1, ty - 1, 1, 1);
                     }
-                    if (hash === 1 && this.game.season === 0) {
-                        // Spring flowers
-                        ctx.fillStyle = '#ff88aa';
-                        ctx.fillRect(px + 6, py + 10, 2, 2);
-                        ctx.fillStyle = '#ffff66';
-                        ctx.fillRect(px + 16, py + 6, 2, 2);
+                    if (hash > 60 && hash < 75) {
+                        ctx.fillStyle = 'rgba(55,130,40,0.3)';
+                        ctx.fillRect(px + 16 + (hash2 % 8), py + 6 + (hash % 10), 2, 3);
+                    }
+                    // Spring/summer flowers
+                    if (this.game.season <= 1) {
+                        if (hash2 < 8) {
+                            const colors = ['#ff88aa', '#ffff66', '#ff6688', '#aaddff', '#ffaa44'];
+                            ctx.fillStyle = colors[hash % 5];
+                            ctx.fillRect(px + 6 + (hash2 % 16), py + 4 + (hash % 16), 3, 3);
+                        }
+                        if (hash2 > 85) {
+                            ctx.fillStyle = '#ffee55';
+                            ctx.fillRect(px + 20 + (hash % 6), py + 14 + (hash2 % 8), 2, 2);
+                        }
+                    }
+                    // Small stones
+                    if (hash > 90) {
+                        ctx.fillStyle = 'rgba(140,130,120,0.3)';
+                        ctx.fillRect(px + 10 + (hash2 % 10), py + 10 + (hash % 10), 3, 2);
                     }
                 }
 
-                // Farmland detail - crop rows
+                // Forest floor - fallen leaves, moss, undergrowth
+                if (terrain === TERRAIN.FOREST) {
+                    if (hash < 25) {
+                        ctx.fillStyle = 'rgba(30,70,25,0.3)';
+                        ctx.fillRect(px + (hash2 % 20) + 2, py + (hash % 20) + 2, 4, 2);
+                    }
+                    if (hash > 70 && this.game.season === 2) {
+                        ctx.fillStyle = 'rgba(180,120,40,0.25)';
+                        ctx.fillRect(px + (hash2 % 22) + 2, py + (hash % 18) + 6, 3, 2);
+                    }
+                }
+
+                // Farmland - richer crop rows with growth stages
                 if (terrain === TERRAIN.FARMLAND) {
-                    const cropPhase = this.game.season;
-                    if (cropPhase !== 3) { // Not winter
-                        ctx.fillStyle = cropPhase === 2 ? '#ccaa33' : '#44aa22';
-                        for (let row = 0; row < 3; row++) {
-                            ctx.fillRect(px + 2, py + 4 + row * 8, TILE_SIZE - 4, 2);
+                    const season = this.game.season;
+                    const rows = 4;
+                    const rowH = Math.floor(T / rows);
+                    for (let row = 0; row < rows; row++) {
+                        // Furrow
+                        ctx.fillStyle = 'rgba(100,80,40,0.2)';
+                        ctx.fillRect(px + 1, py + row * rowH + rowH - 1, T - 2, 1);
+                        if (season !== 3) {
+                            // Crop colors by season
+                            const cropColor = season === 0 ? '#55bb33' : season === 1 ? '#44aa22' : '#ccaa33';
+                            ctx.fillStyle = cropColor;
+                            const cropH = season === 0 ? 2 : season === 1 ? 3 : 4;
+                            for (let c = 0; c < 5; c++) {
+                                ctx.fillRect(px + 3 + c * 6, py + row * rowH + 2, 3, cropH);
+                            }
                         }
                     }
                 }
 
-                // Road detail - lighter center
+                // Road - texture with wheel marks
                 if (terrain === TERRAIN.ROAD) {
-                    ctx.fillStyle = 'rgba(180,170,140,0.3)';
-                    ctx.fillRect(px + 6, py + 6, TILE_SIZE - 12, TILE_SIZE - 12);
+                    ctx.fillStyle = 'rgba(180,170,140,0.25)';
+                    ctx.fillRect(px + T * 0.2, py + T * 0.2, T * 0.6, T * 0.6);
+                    // Wheel tracks
+                    ctx.fillStyle = 'rgba(120,110,80,0.15)';
+                    ctx.fillRect(px + T * 0.3, py, 2, T);
+                    ctx.fillRect(px + T * 0.65, py, 2, T);
                 }
 
-                // Sand detail - dots
+                // Sand - ripple patterns, shells
                 if (terrain === TERRAIN.SAND) {
-                    const hash = (x * 3 + y * 7) % 4;
-                    if (hash === 0) {
-                        ctx.fillStyle = 'rgba(190,175,130,0.4)';
-                        ctx.fillRect(px + 8, py + 8, 2, 2);
+                    if (hash < 20) {
+                        ctx.fillStyle = 'rgba(200,185,140,0.25)';
+                        ctx.fillRect(px + 2, py + (hash % 16) + 4, T - 4, 1);
+                    }
+                    if (hash > 90) {
+                        ctx.fillStyle = 'rgba(220,200,170,0.4)';
+                        ctx.fillRect(px + (hash2 % 18) + 4, py + (hash % 18) + 4, 2, 2);
                     }
                 }
 
-                // Mountain detail - snow caps
+                // Mountain - cracks, snow highlights, rocky texture
                 if (terrain === TERRAIN.MOUNTAIN) {
-                    ctx.fillStyle = 'rgba(220,220,230,0.4)';
-                    ctx.fillRect(px + 4, py + 2, TILE_SIZE - 8, 4);
+                    ctx.fillStyle = 'rgba(220,220,235,0.35)';
+                    ctx.fillRect(px + 4, py + 2, T - 8, 5);
+                    if (hash < 30) {
+                        ctx.fillStyle = 'rgba(60,60,70,0.2)';
+                        ctx.fillRect(px + (hash2 % 16) + 4, py + (hash % 16) + 8, 1, 6);
+                    }
                 }
 
-                // Water edge foam
+                // Hill - grass patches on rock
+                if (terrain === TERRAIN.HILL) {
+                    if (hash < 25) {
+                        ctx.fillStyle = 'rgba(80,130,50,0.2)';
+                        ctx.fillRect(px + (hash2 % 18) + 3, py + (hash % 18) + 3, 4, 3);
+                    }
+                }
+
+                // Water edge foam (enhanced)
                 if (terrain === TERRAIN.SHALLOW_WATER) {
-                    // Check if adjacent to land
                     for (const [dx, dy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
                         const adj = world.getTerrain(x + dx, y + dy);
-                        if (adj !== TERRAIN.DEEP_WATER && adj !== TERRAIN.SHALLOW_WATER) {
-                            const foamAlpha = 0.2 + Math.sin(this.game.tick * 0.03 + x + y) * 0.1;
+                        if (adj !== TERRAIN.DEEP_WATER && adj !== TERRAIN.SHALLOW_WATER && adj !== undefined) {
+                            const foamAlpha = 0.25 + Math.sin(this.game.tick * 0.03 + x + y) * 0.12;
                             ctx.fillStyle = `rgba(255,255,255,${foamAlpha})`;
-                            if (dx === 0 && dy === -1) ctx.fillRect(px, py, TILE_SIZE, 3);
-                            if (dx === 0 && dy === 1) ctx.fillRect(px, py + TILE_SIZE - 3, TILE_SIZE, 3);
-                            if (dx === -1 && dy === 0) ctx.fillRect(px, py, 3, TILE_SIZE);
-                            if (dx === 1 && dy === 0) ctx.fillRect(px + TILE_SIZE - 3, py, 3, TILE_SIZE);
+                            const thickness = 4;
+                            if (dx === 0 && dy === -1) ctx.fillRect(px, py, T, thickness);
+                            if (dx === 0 && dy === 1) ctx.fillRect(px, py + T - thickness, T, thickness);
+                            if (dx === -1 && dy === 0) ctx.fillRect(px, py, thickness, T);
+                            if (dx === 1 && dy === 0) ctx.fillRect(px + T - thickness, py, thickness, T);
+                            // Secondary foam line
+                            const foam2 = 0.12 + Math.sin(this.game.tick * 0.02 + x * 2 + y) * 0.06;
+                            ctx.fillStyle = `rgba(220,240,255,${foam2})`;
+                            if (dx === 0 && dy === -1) ctx.fillRect(px, py + thickness, T, 2);
+                            if (dx === 0 && dy === 1) ctx.fillRect(px, py + T - thickness - 2, T, 2);
+                        }
+                    }
+                }
+
+                // Terrain edge blending (soft borders between terrain types)
+                if (cam.zoom > 0.7) {
+                    for (const [dx, dy] of [[1,0],[0,1]]) {
+                        const adjTerrain = world.getTerrain(x + dx, y + dy);
+                        if (adjTerrain !== terrain && adjTerrain !== undefined) {
+                            const adjColor = TERRAIN_COLORS[adjTerrain];
+                            if (adjColor) {
+                                ctx.fillStyle = this.tintColor(adjColor, TERRAIN_COLORS[terrain] || '#000', 0.5);
+                                ctx.globalAlpha = 0.15;
+                                if (dx === 1) ctx.fillRect(px + T - 3, py, 3, T);
+                                if (dy === 1) ctx.fillRect(px, py + T - 3, T, 3);
+                                ctx.globalAlpha = 1;
+                            }
                         }
                     }
                 }
@@ -157,25 +258,40 @@ export class Renderer {
         if (!baseColor) return '#000';
 
         const season = this.game.season;
+
+        // Richer color variation using multi-octave hash for natural feel
+        const hash1 = ((x * 374761393 + y * 668265263) >>> 0) % 100;
+        const hash2 = ((x * 127849 + y * 893521) >>> 0) % 100;
+        const variation = (hash1 - 50) * 0.15 + (hash2 - 50) * 0.08;
+
         if (terrain === TERRAIN.GRASS || terrain === TERRAIN.FOREST || terrain === TERRAIN.FARMLAND) {
+            let color;
             switch (season) {
-                case 0: return this.tintColor(baseColor, '#80ff80', 0.1);
-                case 1: return baseColor;
-                case 2: return this.tintColor(baseColor, '#cc8833', 0.25);
-                case 3: return this.tintColor(baseColor, '#ccddee', 0.3);
+                case 0: color = this.tintColor(baseColor, '#80ff80', 0.12); break;
+                case 1: color = baseColor; break;
+                case 2: color = this.tintColor(baseColor, '#cc8833', 0.25); break;
+                case 3: color = this.tintColor(baseColor, '#ccddee', 0.3); break;
+                default: color = baseColor;
             }
+            return this.adjustBrightness(color, variation);
         }
 
         if (terrain === TERRAIN.DEEP_WATER || terrain === TERRAIN.SHALLOW_WATER) {
-            const wave = Math.sin(this.game.tick * 0.02 + x * 0.3 + y * 0.2) * 12;
-            return this.adjustBrightness(baseColor, wave);
+            const wave = Math.sin(this.game.tick * 0.02 + x * 0.3 + y * 0.2) * 10;
+            const wave2 = Math.cos(this.game.tick * 0.015 + x * 0.5 - y * 0.3) * 5;
+            return this.adjustBrightness(baseColor, wave + wave2 + variation * 0.5);
         }
 
-        // Subtle variation for natural look
-        const hash = ((x * 374761393 + y * 668265263) >>> 0) % 20;
-        if (hash < 5) return this.adjustBrightness(baseColor, -5 + hash * 2);
+        if (terrain === TERRAIN.SAND) {
+            return this.adjustBrightness(baseColor, variation + Math.sin(x * 0.8 + y * 0.6) * 4);
+        }
 
-        return baseColor;
+        if (terrain === TERRAIN.MOUNTAIN || terrain === TERRAIN.HILL) {
+            // Rocky texture variation
+            return this.adjustBrightness(baseColor, variation * 1.5);
+        }
+
+        return this.adjustBrightness(baseColor, variation * 0.5);
     }
 
     tintColor(base, tint, amount) {
@@ -206,6 +322,37 @@ export class Renderer {
             g: parseInt(result[2], 16),
             b: parseInt(result[3], 16),
         } : null;
+    }
+
+    // ===== SHADOWS (depth/diorama effect) =====
+    renderShadows() {
+        const ctx = this.ctx;
+        const cam = this.game.camera;
+        const { startX, startY, endX, endY } = cam.getVisibleTileRange();
+
+        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+
+        // Tree shadows
+        for (const tree of this.game.entityManager.trees) {
+            if (tree.x < startX - 1 || tree.x > endX + 1 || tree.y < startY - 1 || tree.y > endY + 1) continue;
+            const sx = tree.x * TILE_SIZE;
+            const sy = tree.y * TILE_SIZE;
+            const scale = tree.size / 4;
+            const w = 12 * scale;
+            ctx.beginPath();
+            ctx.ellipse(sx + 4, sy + 4, w, w * 0.4, 0.2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Building shadows
+        for (const b of this.game.entityManager.buildings) {
+            if (b.x + b.size < startX || b.x > endX || b.y + b.size < startY || b.y > endY) continue;
+            const sx = b.x * TILE_SIZE;
+            const sy = b.y * TILE_SIZE;
+            const bw = b.size * TILE_SIZE;
+            const bh = b.size * TILE_SIZE;
+            ctx.fillRect(sx + 4, sy + bh - 2, bw + 4, 6);
+        }
     }
 
     // ===== TREES (sprite-based) =====
@@ -290,6 +437,50 @@ export class Renderer {
                 ctx.fillRect(barX, sy - 4, barW, 3);
                 ctx.fillStyle = b.health > 30 ? '#4c4' : '#c44';
                 ctx.fillRect(barX, sy - 4, barW * b.health / 100, 3);
+            }
+        }
+    }
+
+    // ===== VEHICLES (decorative, near roads/buildings) =====
+    renderVehicles() {
+        const ctx = this.ctx;
+        const cam = this.game.camera;
+        const world = this.game.world;
+        const { startX, startY, endX, endY } = cam.getVisibleTileRange();
+        const tick = this.game.tick;
+        const era = this.game.currentEra;
+
+        // Only show vehicles in later eras
+        const eraIndex = this.game.simulation.techLevel;
+        if (eraIndex < 60) return; // Bronze age+
+
+        // Render decorative vehicles on/near roads
+        for (let y = Math.max(0, startY); y < Math.min(world.height, endY); y += 3) {
+            for (let x = Math.max(0, startX); x < Math.min(world.width, endX); x += 3) {
+                const terrain = world.getTerrain(x, y);
+                if (terrain !== TERRAIN.ROAD) continue;
+
+                const hash = ((x * 374761393 + y * 668265263) >>> 0) % 100;
+                if (hash > 12) continue; // Only some roads have vehicles
+
+                const px = x * TILE_SIZE;
+                const py = y * TILE_SIZE;
+                // Animate position slowly along road
+                const offset = Math.sin(tick * 0.005 + hash) * TILE_SIZE * 0.3;
+
+                if (eraIndex >= 1000) {
+                    // Modern era - car
+                    const sprite = this.sprites.get('car');
+                    if (sprite) {
+                        ctx.drawImage(sprite, px + offset, py + 2, TILE_SIZE * 0.8, TILE_SIZE * 0.5);
+                    }
+                } else if (eraIndex >= 250) {
+                    // Medieval+ - cart
+                    const sprite = this.sprites.get('cart');
+                    if (sprite) {
+                        ctx.drawImage(sprite, px + offset, py + 4, TILE_SIZE * 0.7, TILE_SIZE * 0.45);
+                    }
+                }
             }
         }
     }
@@ -548,8 +739,8 @@ export class Renderer {
         const world = this.game.world;
         const { startX, startY, endX, endY } = cam.getVisibleTileRange();
         const tick = this.game.tick;
+        const T = TILE_SIZE;
 
-        // Only render shimmer when somewhat zoomed
         if (cam.zoom < 0.5) return;
 
         for (let y = Math.max(0, startY); y < Math.min(world.height, endY); y += 2) {
@@ -557,27 +748,35 @@ export class Renderer {
                 const terrain = world.getTerrain(x, y);
                 if (terrain !== TERRAIN.DEEP_WATER && terrain !== TERRAIN.SHALLOW_WATER) continue;
 
-                const px = x * TILE_SIZE;
-                const py = y * TILE_SIZE;
+                const px = x * T;
+                const py = y * T;
 
-                // Animated light reflection on water
+                // Primary shimmer
                 const shimmer = Math.sin(tick * 0.03 + x * 0.7 + y * 0.5) *
                                Math.cos(tick * 0.02 + x * 0.3 - y * 0.4);
 
-                if (shimmer > 0.5) {
-                    const alpha = (shimmer - 0.5) * 0.3;
+                if (shimmer > 0.4) {
+                    const alpha = (shimmer - 0.4) * 0.35;
                     ctx.fillStyle = `rgba(200,230,255,${alpha})`;
-                    const sx = 2 + Math.sin(tick * 0.04 + x) * 2;
-                    const sy = 2 + Math.cos(tick * 0.03 + y) * 2;
-                    ctx.fillRect(px + sx, py + sy, 3, 1);
+                    const sx = 3 + Math.sin(tick * 0.04 + x) * 3;
+                    const sy = 3 + Math.cos(tick * 0.03 + y) * 3;
+                    ctx.fillRect(px + sx, py + sy, 4, 2);
                 }
 
-                // Secondary shimmer spot
+                // Secondary shimmer
                 const shimmer2 = Math.sin(tick * 0.025 + x * 1.1 + y * 0.8);
-                if (shimmer2 > 0.7) {
-                    const alpha = (shimmer2 - 0.7) * 0.25;
+                if (shimmer2 > 0.6) {
+                    const alpha = (shimmer2 - 0.6) * 0.3;
                     ctx.fillStyle = `rgba(255,255,240,${alpha})`;
-                    ctx.fillRect(px + 12 + Math.sin(tick * 0.05) * 3, py + 8, 2, 1);
+                    ctx.fillRect(px + T * 0.5 + Math.sin(tick * 0.05) * 4, py + T * 0.3, 3, 1);
+                }
+
+                // Third shimmer for depth
+                const shimmer3 = Math.cos(tick * 0.018 + x * 0.5 + y * 1.2);
+                if (shimmer3 > 0.65) {
+                    const alpha = (shimmer3 - 0.65) * 0.2;
+                    ctx.fillStyle = `rgba(180,220,255,${alpha})`;
+                    ctx.fillRect(px + T * 0.7 + Math.cos(tick * 0.06) * 2, py + T * 0.6, 3, 1);
                 }
             }
         }
@@ -590,33 +789,49 @@ export class Renderer {
         const tick = this.game.tick;
         const { startX, startY, endX, endY } = cam.getVisibleTileRange();
 
-        // Only when zoomed in enough
-        if (cam.zoom < 0.7) return;
+        if (cam.zoom < 0.5) return;
 
         for (const b of this.game.entityManager.buildings) {
             if (b.x + b.size < startX || b.x > endX || b.y + b.size < startY || b.y > endY) continue;
 
-            // Only certain buildings emit smoke
             const smokeTypes = ['WORKSHOP', 'FACTORY', 'HUT'];
             if (!smokeTypes.includes(b.buildingType)) continue;
 
             const bx = (b.x + b.size * 0.7) * TILE_SIZE;
             const by = b.y * TILE_SIZE;
 
-            // Animated smoke puffs
-            for (let i = 0; i < 3; i++) {
-                const age = ((tick + i * 40) % 120) / 120; // 0→1 lifecycle
+            // More smoke puffs with larger size
+            for (let i = 0; i < 4; i++) {
+                const age = ((tick + i * 35) % 140) / 140;
                 if (age > 0.95) continue;
 
-                const smokeX = bx + Math.sin(tick * 0.01 + i * 2) * 4 * age;
-                const smokeY = by - 8 - age * 20;
-                const size = 2 + age * 4;
-                const alpha = Math.max(0, 0.15 * (1 - age));
+                const smokeX = bx + Math.sin(tick * 0.01 + i * 2) * 6 * age;
+                const smokeY = by - 10 - age * 30;
+                const size = 3 + age * 6;
+                const alpha = Math.max(0, 0.18 * (1 - age));
 
-                ctx.fillStyle = `rgba(180,180,180,${alpha})`;
+                ctx.fillStyle = `rgba(180,180,190,${alpha})`;
                 ctx.beginPath();
                 ctx.arc(smokeX, smokeY, size, 0, Math.PI * 2);
                 ctx.fill();
+
+                // Lighter inner puff
+                if (age < 0.5) {
+                    ctx.fillStyle = `rgba(200,200,210,${alpha * 0.5})`;
+                    ctx.beginPath();
+                    ctx.arc(smokeX, smokeY, size * 0.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Building windows glow at night
+            if (!this.game.isDaytime && b.buildingType !== 'FARM') {
+                ctx.fillStyle = 'rgba(255,220,120,0.15)';
+                const sx = b.x * TILE_SIZE;
+                const sy = b.y * TILE_SIZE;
+                const bw = b.size * TILE_SIZE;
+                const bh = b.size * TILE_SIZE;
+                ctx.fillRect(sx + bw * 0.2, sy + bh * 0.3, bw * 0.6, bh * 0.4);
             }
         }
     }
@@ -668,39 +883,22 @@ export class Renderer {
         }
     }
 
-    // ===== DAY/NIGHT =====
+    // ===== DAY/NIGHT (subtle, icon-based - no heavy overlay) =====
     renderDayNightOverlay() {
         const ctx = this.ctx;
         const cam = this.game.camera;
         const timeOfDay = this.game.timeOfDay;
 
-        let overlayColor = null;
-        let alpha = 0;
-
-        if (timeOfDay < 0.2 || timeOfDay > 0.82) {
-            // Night - deeper blue for ambient beauty
-            overlayColor = '8,8,35';
-            alpha = 0.4;
-        } else if (timeOfDay < 0.28) {
-            // Dawn - warm golden tones
-            const t = (timeOfDay - 0.2) / 0.08;
-            overlayColor = `${60 - t * 40},${30 + t * 10},${20 + t * 10}`;
-            alpha = 0.2 * (1 - t);
-        } else if (timeOfDay > 0.72) {
-            // Dusk - warm orange/purple
-            const t = (timeOfDay - 0.72) / 0.1;
-            overlayColor = `${40 + t * 20},${15 + t * 5},${30 + t * 10}`;
-            alpha = 0.2 * t;
-        }
-
-        if (overlayColor && alpha > 0) {
-            ctx.fillStyle = `rgba(${overlayColor},${alpha})`;
+        // Very subtle tint only - no heavy brightness change
+        const isNight = timeOfDay < 0.2 || timeOfDay > 0.82;
+        if (isNight) {
+            ctx.fillStyle = 'rgba(10,10,40,0.08)';
             ctx.fillRect(cam.x, cam.y,
                 this.game.canvas.width / cam.zoom,
                 this.game.canvas.height / cam.zoom);
         }
 
-        // Stars at night (world-space)
+        // Stars at night (world-space) - kept for ambiance
         if (timeOfDay < 0.18 || timeOfDay > 0.84) {
             const nightAlpha = timeOfDay < 0.18
                 ? 1 - timeOfDay / 0.18
@@ -716,6 +914,121 @@ export class Renderer {
                 ctx.fillRect(sx, sy, size, size);
             }
         }
+    }
+
+    // ===== SHOCKWAVE RINGS (god power feedback) =====
+    addShockwave(x, y, options = {}) {
+        this.shockwaves.push({
+            x, y,
+            radius: options.startRadius || 0,
+            maxRadius: options.maxRadius || 12,
+            life: options.life || 40,
+            maxLife: options.life || 40,
+            color: options.color || '255,215,0',
+            lineWidth: options.lineWidth || 3,
+        });
+    }
+
+    renderShockwaves() {
+        const ctx = this.ctx;
+        for (let i = this.shockwaves.length - 1; i >= 0; i--) {
+            const s = this.shockwaves[i];
+            s.life--;
+            const progress = 1 - s.life / s.maxLife;
+            s.radius = s.maxRadius * progress;
+
+            if (s.life <= 0) {
+                this.shockwaves.splice(i, 1);
+                continue;
+            }
+
+            const alpha = (s.life / s.maxLife) * 0.8;
+            const px = s.x * TILE_SIZE;
+            const py = s.y * TILE_SIZE;
+
+            // Outer ring
+            ctx.strokeStyle = `rgba(${s.color},${alpha})`;
+            ctx.lineWidth = s.lineWidth * (s.life / s.maxLife);
+            ctx.beginPath();
+            ctx.arc(px, py, s.radius * TILE_SIZE, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Inner glow fill
+            const grd = ctx.createRadialGradient(px, py, 0, px, py, s.radius * TILE_SIZE);
+            grd.addColorStop(0, `rgba(${s.color},${alpha * 0.15})`);
+            grd.addColorStop(0.7, `rgba(${s.color},${alpha * 0.05})`);
+            grd.addColorStop(1, `rgba(${s.color},0)`);
+            ctx.fillStyle = grd;
+            ctx.beginPath();
+            ctx.arc(px, py, s.radius * TILE_SIZE, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // ===== GLOW POINTS (persistent god power marks) =====
+    addGlowPoint(x, y, options = {}) {
+        this.glowPoints.push({
+            x, y,
+            life: options.life || 120,
+            maxLife: options.life || 120,
+            color: options.color || '255,215,0',
+            radius: options.radius || 4,
+            pulse: options.pulse !== false,
+        });
+    }
+
+    renderGlowPoints() {
+        const ctx = this.ctx;
+        for (let i = this.glowPoints.length - 1; i >= 0; i--) {
+            const g = this.glowPoints[i];
+            g.life--;
+            if (g.life <= 0) {
+                this.glowPoints.splice(i, 1);
+                continue;
+            }
+
+            const alpha = (g.life / g.maxLife) * 0.6;
+            const px = g.x * TILE_SIZE;
+            const py = g.y * TILE_SIZE;
+            const pulseScale = g.pulse ? 1 + Math.sin(this.game.tick * 0.1) * 0.3 : 1;
+            const r = g.radius * TILE_SIZE * pulseScale;
+
+            const grd = ctx.createRadialGradient(px, py, 0, px, py, r);
+            grd.addColorStop(0, `rgba(${g.color},${alpha * 0.5})`);
+            grd.addColorStop(0.4, `rgba(${g.color},${alpha * 0.2})`);
+            grd.addColorStop(1, `rgba(${g.color},0)`);
+            ctx.fillStyle = grd;
+            ctx.fillRect(px - r, py - r, r * 2, r * 2);
+        }
+    }
+
+    // ===== SCREEN FLASH (god power feedback, screen-space) =====
+    triggerScreenFlash(color = '255,255,255', intensity = 0.4) {
+        this.screenFlash = { alpha: intensity, color };
+    }
+
+    renderScreenFlash() {
+        if (this.screenFlash.alpha <= 0) return;
+        const ctx = this.ctx;
+        ctx.fillStyle = `rgba(${this.screenFlash.color},${this.screenFlash.alpha})`;
+        ctx.fillRect(0, 0, this.game.canvas.width, this.game.canvas.height);
+        this.screenFlash.alpha -= 0.015;
+        if (this.screenFlash.alpha < 0) this.screenFlash.alpha = 0;
+    }
+
+    // ===== DIORAMA VIGNETTE (subtle for all modes, stronger for ambient) =====
+    renderDioramaEdge() {
+        const ctx = this.ctx;
+        const w = this.game.canvas.width;
+        const h = this.game.canvas.height;
+
+        // Subtle edge darkening for diorama feel (always active)
+        const grd = ctx.createRadialGradient(w / 2, h / 2, w * 0.3, w / 2, h / 2, w * 0.75);
+        grd.addColorStop(0, 'rgba(0,0,0,0)');
+        grd.addColorStop(0.8, 'rgba(0,0,0,0)');
+        grd.addColorStop(1, 'rgba(0,0,0,0.15)');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, w, h);
     }
 
     // ===== VIGNETTE (screen-space, ambient mode only) =====

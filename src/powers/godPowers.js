@@ -95,36 +95,133 @@ export class GodPowers {
             this.game.sound.play(soundMap[this.activePower]);
         }
 
-        // Particle effects
-        if (this.activePower === 'bless' || this.activePower === 'miracle') {
-            for (let i = 0; i < 15; i++) {
-                this.game.renderer.addParticle(
-                    worldX + (Math.random() - 0.5) * 8,
-                    worldY + (Math.random() - 0.5) * 8,
+        // Enhanced particle effects + shockwaves + screen flash
+        const renderer = this.game.renderer;
+
+        if (this.activePower === 'bless') {
+            // Golden sparkle shower
+            for (let i = 0; i < 40; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 6;
+                renderer.addParticle(
+                    worldX + Math.cos(angle) * dist,
+                    worldY + Math.sin(angle) * dist,
                     'sparkle',
-                    { vy: -0.03, life: 40 + Math.random() * 30, size: 4 + Math.random() * 3 }
+                    { vy: -0.04 - Math.random() * 0.02, vx: (Math.random() - 0.5) * 0.02, life: 60 + Math.random() * 40, size: 5 + Math.random() * 4 }
                 );
             }
+            renderer.addShockwave(worldX, worldY, { maxRadius: 10, life: 50, color: '255,215,0', lineWidth: 3 });
+            renderer.addGlowPoint(worldX, worldY, { life: 180, color: '255,215,0', radius: 5 });
+            renderer.triggerScreenFlash('255,230,100', 0.2);
         }
+
+        if (this.activePower === 'miracle') {
+            // Massive golden explosion
+            for (let i = 0; i < 80; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 10;
+                renderer.addParticle(
+                    worldX + Math.cos(angle) * dist,
+                    worldY + Math.sin(angle) * dist,
+                    'sparkle',
+                    { vy: -0.05 - Math.random() * 0.03, vx: (Math.random() - 0.5) * 0.04, life: 80 + Math.random() * 60, size: 6 + Math.random() * 5 }
+                );
+            }
+            // Triple shockwave
+            renderer.addShockwave(worldX, worldY, { maxRadius: 15, life: 60, color: '255,255,200', lineWidth: 5 });
+            renderer.addShockwave(worldX, worldY, { maxRadius: 12, life: 45, color: '255,215,0', lineWidth: 3 });
+            renderer.addShockwave(worldX, worldY, { maxRadius: 8, life: 30, color: '255,200,50', lineWidth: 2 });
+            renderer.addGlowPoint(worldX, worldY, { life: 300, color: '255,255,180', radius: 8 });
+            renderer.triggerScreenFlash('255,255,200', 0.4);
+        }
+
         if (this.activePower === 'plague') {
-            for (let i = 0; i < 8; i++) {
-                this.game.renderer.addParticle(
-                    worldX + (Math.random() - 0.5) * 10,
-                    worldY + (Math.random() - 0.5) * 10,
+            // Green toxic cloud
+            for (let i = 0; i < 25; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 8;
+                renderer.addParticle(
+                    worldX + Math.cos(angle) * dist,
+                    worldY + Math.sin(angle) * dist,
                     'skull',
-                    { vy: -0.02, life: 50 + Math.random() * 30, size: 5 }
+                    { vy: -0.025, vx: (Math.random() - 0.5) * 0.015, life: 70 + Math.random() * 40, size: 6 }
+                );
+            }
+            // Sickly green particles
+            for (let i = 0; i < 30; i++) {
+                renderer.addParticle(
+                    worldX + (Math.random() - 0.5) * 16,
+                    worldY + (Math.random() - 0.5) * 16,
+                    'generic',
+                    { vy: -0.01, life: 50 + Math.random() * 30, size: 3, color: '#44cc44' }
+                );
+            }
+            renderer.addShockwave(worldX, worldY, { maxRadius: 12, life: 50, color: '80,200,80', lineWidth: 3 });
+            renderer.addGlowPoint(worldX, worldY, { life: 200, color: '80,180,60', radius: 6 });
+            renderer.triggerScreenFlash('80,200,80', 0.15);
+        }
+
+        if (this.activePower === 'lightning') {
+            // Explosive fire burst
+            for (let i = 0; i < 20; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 0.02 + Math.random() * 0.03;
+                renderer.addParticle(
+                    tileX + (Math.random() - 0.5) * 3,
+                    tileY + (Math.random() - 0.5) * 3,
+                    'fire',
+                    { vy: Math.sin(angle) * speed - 0.02, vx: Math.cos(angle) * speed, life: 40 + Math.random() * 30, size: 5 }
+                );
+            }
+            renderer.addShockwave(tileX, tileY, { maxRadius: 5, life: 20, color: '255,255,100', lineWidth: 4 });
+            renderer.triggerScreenFlash('255,255,200', 0.35);
+        }
+
+        if (this.activePower === 'earthquake') {
+            // Ground debris particles
+            for (let i = 0; i < 40; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 0.015 + Math.random() * 0.03;
+                renderer.addParticle(
+                    tileX + (Math.random() - 0.5) * 12,
+                    tileY + (Math.random() - 0.5) * 12,
+                    'generic',
+                    { vy: -0.02 + Math.sin(angle) * speed, vx: Math.cos(angle) * speed, life: 50 + Math.random() * 30, size: 3 + Math.random() * 3, color: '#8a7a5a' }
+                );
+            }
+            renderer.addShockwave(tileX, tileY, { maxRadius: 10, life: 40, color: '180,140,80', lineWidth: 4 });
+            renderer.addShockwave(tileX, tileY, { maxRadius: 6, life: 25, color: '200,160,100', lineWidth: 2 });
+            renderer.addGlowPoint(tileX, tileY, { life: 100, color: '180,140,80', radius: 5 });
+            renderer.triggerScreenFlash('180,140,80', 0.2);
+        }
+
+        if (this.activePower === 'storm') {
+            renderer.addShockwave(worldX, worldY, { maxRadius: 8, life: 30, color: '100,150,255', lineWidth: 3 });
+            renderer.triggerScreenFlash('100,150,200', 0.15);
+        }
+
+        if (this.activePower === 'sun') {
+            renderer.addShockwave(worldX, worldY, { maxRadius: 8, life: 30, color: '255,230,100', lineWidth: 2 });
+            for (let i = 0; i < 20; i++) {
+                renderer.addParticle(
+                    worldX + (Math.random() - 0.5) * 12,
+                    worldY + (Math.random() - 0.5) * 12,
+                    'sparkle',
+                    { vy: -0.02, life: 40 + Math.random() * 20, size: 3 + Math.random() * 3 }
                 );
             }
         }
-        if (this.activePower === 'lightning') {
-            for (let i = 0; i < 6; i++) {
-                this.game.renderer.addParticle(
-                    tileX + (Math.random() - 0.5) * 4,
-                    tileY + (Math.random() - 0.5) * 4,
-                    'fire',
-                    { vy: -0.01, life: 30 + Math.random() * 20, size: 4 }
-                );
-            }
+
+        if (this.activePower === 'rain') {
+            renderer.addShockwave(worldX, worldY, { maxRadius: 6, life: 25, color: '100,180,255', lineWidth: 2 });
+        }
+
+        if (this.activePower === 'snow') {
+            renderer.addShockwave(worldX, worldY, { maxRadius: 6, life: 25, color: '200,220,255', lineWidth: 2 });
+        }
+
+        if (this.activePower === 'wind') {
+            renderer.addShockwave(worldX, worldY, { maxRadius: 6, life: 25, color: '180,200,180', lineWidth: 2 });
         }
     }
 

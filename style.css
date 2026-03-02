@@ -64,6 +64,30 @@ body {
     border: 1px solid rgba(255,255,255,0.15);
 }
 
+#time-indicator {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px;
+    min-width: 60px;
+    transition: all 0.5s ease;
+}
+
+#time-icon {
+    font-size: 18px;
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    filter: drop-shadow(0 0 4px rgba(255,200,50,0.6));
+}
+
+#time-label {
+    font-size: 11px;
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    color: #ccc;
+}
+
 #speed-controls {
     display: flex;
     gap: 5px;
