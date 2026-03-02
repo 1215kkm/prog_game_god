@@ -31,6 +31,13 @@ export class Renderer {
         // Offscreen canvas for smooth terrain rendering
         this._terrainCanvas = null;
         this._terrainCtx = null;
+
+        // Tilt-shift blur buffers (diorama depth-of-field)
+        this._tiltBuffer = null;
+        this._tiltBufferCtx = null;
+
+        // CSS filter for diorama saturation/contrast boost (GPU-accelerated, free)
+        game.canvas.style.filter = 'saturate(1.4) contrast(1.1) brightness(1.02)';
     }
 
     render() {
@@ -68,7 +75,13 @@ export class Renderer {
         // Screen flash (screen space)
         this.renderScreenFlash();
 
-        // Diorama edge (always active for miniature world feel)
+        // Tilt-shift blur (diorama depth-of-field effect)
+        this.renderTiltShift();
+
+        // Warm color grade overlay (miniature photography feel)
+        this.renderWarmGrade();
+
+        // Diorama vignette (always active for miniature world feel)
         this.renderDioramaEdge();
 
         // Post-processing (screen space)
@@ -386,34 +399,59 @@ export class Renderer {
         } : null;
     }
 
-    // ===== SHADOWS (depth/diorama effect) =====
+    // ===== SHADOWS (soft diorama shadows with blur) =====
     renderShadows() {
         const ctx = this.ctx;
         const cam = this.game.camera;
         const { startX, startY, endX, endY } = cam.getVisibleTileRange();
 
-        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+        // Soft shadow color - slightly blue-tinted for realism
+        ctx.fillStyle = 'rgba(10,15,40,0.18)';
 
-        // Tree shadows
+        // Tree shadows (larger, softer ellipses)
         for (const tree of this.game.entityManager.trees) {
-            if (tree.x < startX - 1 || tree.x > endX + 1 || tree.y < startY - 1 || tree.y > endY + 1) continue;
+            if (tree.x < startX - 2 || tree.x > endX + 2 || tree.y < startY - 2 || tree.y > endY + 2) continue;
             const sx = tree.x * TILE_SIZE;
             const sy = tree.y * TILE_SIZE;
-            const scale = tree.size / 4;
-            const w = 12 * scale;
+            const scale = tree.size / 3;
+            const w = 14 * scale;
+            // Outer soft shadow
+            ctx.fillStyle = 'rgba(10,15,40,0.08)';
             ctx.beginPath();
-            ctx.ellipse(sx + 4, sy + 4, w, w * 0.4, 0.2, 0, Math.PI * 2);
+            ctx.ellipse(sx + 6, sy + 6, w * 1.3, w * 0.55, 0.3, 0, Math.PI * 2);
+            ctx.fill();
+            // Inner darker shadow
+            ctx.fillStyle = 'rgba(10,15,40,0.15)';
+            ctx.beginPath();
+            ctx.ellipse(sx + 5, sy + 5, w, w * 0.4, 0.3, 0, Math.PI * 2);
             ctx.fill();
         }
 
-        // Building shadows
+        // Building shadows (softer, offset to the right for sunlight direction)
         for (const b of this.game.entityManager.buildings) {
             if (b.x + b.size < startX || b.x > endX || b.y + b.size < startY || b.y > endY) continue;
             const sx = b.x * TILE_SIZE;
             const sy = b.y * TILE_SIZE;
             const bw = b.size * TILE_SIZE;
             const bh = b.size * TILE_SIZE;
-            ctx.fillRect(sx + 4, sy + bh - 2, bw + 4, 6);
+            // Outer soft shadow
+            ctx.fillStyle = 'rgba(10,15,40,0.07)';
+            ctx.fillRect(sx + 3, sy + bh - 1, bw + 8, 10);
+            // Inner shadow
+            ctx.fillStyle = 'rgba(10,15,40,0.14)';
+            ctx.fillRect(sx + 5, sy + bh, bw + 4, 6);
+        }
+
+        // People shadows (tiny ellipses for depth)
+        ctx.fillStyle = 'rgba(10,15,40,0.12)';
+        for (const p of this.game.entityManager.people) {
+            if (!p.alive) continue;
+            if (p.x < startX - 1 || p.x > endX + 1 || p.y < startY - 1 || p.y > endY + 1) continue;
+            const sx = p.x * TILE_SIZE;
+            const sy = p.y * TILE_SIZE;
+            ctx.beginPath();
+            ctx.ellipse(sx, sy + 2, 5, 2, 0, 0, Math.PI * 2);
+            ctx.fill();
         }
     }
 
@@ -1107,17 +1145,82 @@ export class Renderer {
         if (this.screenFlash.alpha < 0) this.screenFlash.alpha = 0;
     }
 
-    // ===== DIORAMA VIGNETTE (subtle for all modes, stronger for ambient) =====
+    // ===== DIORAMA VIGNETTE (strong miniature photography look) =====
     renderDioramaEdge() {
         const ctx = this.ctx;
         const w = this.game.canvas.width;
         const h = this.game.canvas.height;
 
-        // Subtle edge darkening for diorama feel (always active)
-        const grd = ctx.createRadialGradient(w / 2, h / 2, w * 0.3, w / 2, h / 2, w * 0.75);
+        // Strong diorama vignette - darkened edges like miniature photography
+        const grd = ctx.createRadialGradient(w / 2, h / 2, w * 0.22, w / 2, h / 2, w * 0.72);
         grd.addColorStop(0, 'rgba(0,0,0,0)');
-        grd.addColorStop(0.8, 'rgba(0,0,0,0)');
-        grd.addColorStop(1, 'rgba(0,0,0,0.15)');
+        grd.addColorStop(0.6, 'rgba(0,0,0,0)');
+        grd.addColorStop(0.85, 'rgba(0,0,0,0.12)');
+        grd.addColorStop(1, 'rgba(0,0,0,0.35)');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, w, h);
+    }
+
+    // ===== TILT-SHIFT BLUR (diorama depth-of-field) =====
+    renderTiltShift() {
+        const canvas = this.game.canvas;
+        const ctx = this.ctx;
+        const w = canvas.width;
+        const h = canvas.height;
+
+        // Skip if canvas filter not supported
+        if (typeof ctx.filter === 'undefined') return;
+
+        // Lazy-init blur buffer
+        if (!this._tiltBuffer) {
+            this._tiltBuffer = document.createElement('canvas');
+            this._tiltBufferCtx = this._tiltBuffer.getContext('2d');
+        }
+        if (this._tiltBuffer.width !== w || this._tiltBuffer.height !== h) {
+            this._tiltBuffer.width = w;
+            this._tiltBuffer.height = h;
+        }
+
+        const bufCtx = this._tiltBufferCtx;
+
+        // Create blurred copy of current frame
+        bufCtx.clearRect(0, 0, w, h);
+        bufCtx.filter = 'blur(4px)';
+        bufCtx.drawImage(canvas, 0, 0);
+        bufCtx.filter = 'none';
+
+        // Mask: reveal blur only at top and bottom (gradient fade)
+        bufCtx.globalCompositeOperation = 'destination-in';
+        const maskGrd = bufCtx.createLinearGradient(0, 0, 0, h);
+        maskGrd.addColorStop(0, 'rgba(0,0,0,0.9)');     // Strong blur at top
+        maskGrd.addColorStop(0.22, 'rgba(0,0,0,0.3)');  // Fade
+        maskGrd.addColorStop(0.35, 'rgba(0,0,0,0)');    // Sharp center
+        maskGrd.addColorStop(0.65, 'rgba(0,0,0,0)');    // Sharp center
+        maskGrd.addColorStop(0.78, 'rgba(0,0,0,0.3)');  // Fade
+        maskGrd.addColorStop(1, 'rgba(0,0,0,0.9)');     // Strong blur at bottom
+        bufCtx.fillStyle = maskGrd;
+        bufCtx.fillRect(0, 0, w, h);
+        bufCtx.globalCompositeOperation = 'source-over';
+
+        // Composite masked blur over original (center stays sharp)
+        ctx.drawImage(this._tiltBuffer, 0, 0);
+    }
+
+    // ===== WARM COLOR GRADE (miniature photography warmth) =====
+    renderWarmGrade() {
+        const ctx = this.ctx;
+        const w = this.game.canvas.width;
+        const h = this.game.canvas.height;
+
+        // Subtle warm overlay - like afternoon sunlight on a miniature
+        ctx.fillStyle = 'rgba(255,235,210,0.04)';
+        ctx.fillRect(0, 0, w, h);
+
+        // Very subtle golden highlight in center (focal warmth)
+        const grd = ctx.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h * 0.45, w * 0.5);
+        grd.addColorStop(0, 'rgba(255,245,220,0.03)');
+        grd.addColorStop(0.5, 'rgba(255,240,200,0.015)');
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = grd;
         ctx.fillRect(0, 0, w, h);
     }

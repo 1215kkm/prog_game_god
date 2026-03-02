@@ -18,16 +18,16 @@ export const TERRAIN = {
 };
 
 export const TERRAIN_COLORS = {
-    [TERRAIN.DEEP_WATER]: '#1a4080',
-    [TERRAIN.SHALLOW_WATER]: '#3078aa',
-    [TERRAIN.SAND]: '#dcc88a',
-    [TERRAIN.GRASS]: '#5a9a48',
-    [TERRAIN.FOREST]: '#357035',
-    [TERRAIN.HILL]: '#7a9058',
-    [TERRAIN.MOUNTAIN]: '#8a8890',
-    [TERRAIN.SNOW_PEAK]: '#eaeaf4',
-    [TERRAIN.FARMLAND]: '#8aaa42',
-    [TERRAIN.ROAD]: '#a09070',
+    [TERRAIN.DEEP_WATER]: '#1858a0',
+    [TERRAIN.SHALLOW_WATER]: '#3890c4',
+    [TERRAIN.SAND]: '#e8d89c',
+    [TERRAIN.GRASS]: '#4aac40',
+    [TERRAIN.FOREST]: '#2a8030',
+    [TERRAIN.HILL]: '#78a450',
+    [TERRAIN.MOUNTAIN]: '#8a8a96',
+    [TERRAIN.SNOW_PEAK]: '#eef0f8',
+    [TERRAIN.FARMLAND]: '#82bc34',
+    [TERRAIN.ROAD]: '#a8986e',
 };
 
 // Seasons
