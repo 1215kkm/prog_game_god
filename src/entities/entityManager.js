@@ -10,6 +10,7 @@ export class EntityManager {
         this.animals = [];
         this.buildings = [];
         this.trees = []; // Decorative trees
+        this.customEntities = []; // 레지스트리 기반 커스텀 엔티티
     }
 
     spawnInitialEntities() {
@@ -91,10 +92,13 @@ export class EntityManager {
     }
 
     update() {
+        const events = this.game.events;
+
         // Update people
         for (let i = this.people.length - 1; i >= 0; i--) {
             this.people[i].update();
             if (!this.people[i].alive) {
+                events.emit('entity:died', this.people[i], 'person');
                 this.people.splice(i, 1);
             }
         }
@@ -103,6 +107,7 @@ export class EntityManager {
         for (let i = this.animals.length - 1; i >= 0; i--) {
             this.animals[i].update();
             if (!this.animals[i].alive) {
+                events.emit('entity:died', this.animals[i], 'animal');
                 this.animals.splice(i, 1);
             }
         }
@@ -111,7 +116,21 @@ export class EntityManager {
         for (let i = this.buildings.length - 1; i >= 0; i--) {
             this.buildings[i].update();
             if (this.buildings[i].health <= 0) {
+                events.emit('building:destroyed', this.buildings[i]);
                 this.buildings.splice(i, 1);
+            }
+        }
+
+        // Update custom entities (registry-based)
+        for (let i = this.customEntities.length - 1; i >= 0; i--) {
+            const ce = this.customEntities[i];
+            if (ce.def.behavior) {
+                ce.def.behavior(ce, this.game, 1);
+            }
+            if (!ce.alive) {
+                if (ce.def.onDeath) ce.def.onDeath(ce, this.game);
+                events.emit('entity:died', ce, ce.def.type);
+                this.customEntities.splice(i, 1);
             }
         }
 
@@ -245,6 +264,13 @@ export class EntityManager {
     }
 
     getEntityAt(worldX, worldY, radius = 1) {
+        // Check custom entities first (they're usually special/important)
+        for (const ce of this.customEntities) {
+            if (!ce.alive) continue;
+            const dx = ce.x - worldX;
+            const dy = ce.y - worldY;
+            if (dx * dx + dy * dy < radius * radius) return { type: ce.def.type, entity: ce };
+        }
         // Check people
         for (const p of this.people) {
             if (!p.alive) continue;
@@ -267,5 +293,91 @@ export class EntityManager {
             if (dx * dx + dy * dy < radius * radius) return { type: 'animal', entity: a };
         }
         return null;
+    }
+
+    // ===== 커스텀 엔티티 스폰 (레지스트리 기반) =====
+
+    /**
+     * 레지스트리에 등록된 커스텀 엔티티 스폰
+     * @param {string} type - 등록된 타입 이름 (예: 'batman', 'dragon')
+     * @param {number} x - 월드 X 좌표
+     * @param {number} y - 월드 Y 좌표
+     * @param {Object} overrides - 속성 오버라이드 (선택)
+     * @returns {Object|null} 생성된 엔티티
+     */
+    spawnCustom(type, x, y, overrides = {}) {
+        const def = this.game.registry.getEntity(type);
+        if (!def) {
+            console.warn(`[EntityManager] Unknown entity type: '${type}'`);
+            return null;
+        }
+
+        const entity = {
+            x, y,
+            alive: true,
+            def,
+            target: null,
+            health: def.config.health || 100,
+            speed: def.config.speed || 1,
+            size: def.config.size || 1,
+            color: def.config.color || '#ff00ff',
+            data: {}, // 자유 데이터 저장소
+            ...overrides,
+
+            // 유틸리티 메서드
+            moveTo(tx, ty) {
+                const dx = tx - this.x;
+                const dy = ty - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 0.1) {
+                    this.x += (dx / dist) * this.speed * 0.05;
+                    this.y += (dy / dist) * this.speed * 0.05;
+                }
+            },
+            distanceTo(other) {
+                const dx = this.x - (other.x || 0);
+                const dy = this.y - (other.y || 0);
+                return Math.sqrt(dx * dx + dy * dy);
+            },
+            kill() {
+                this.alive = false;
+            },
+        };
+
+        this.customEntities.push(entity);
+
+        // 이벤트 발행
+        this.game.events.emit('entity:spawned', entity, type);
+
+        // onSpawn 콜백
+        if (def.onSpawn) def.onSpawn(entity, this.game);
+
+        // 이벤트 리액션 등록
+        if (def.reactions) {
+            for (const [event, handler] of Object.entries(def.reactions)) {
+                this.game.events.on(event, (...args) => {
+                    if (entity.alive) handler(entity, ...args);
+                });
+            }
+        }
+
+        return entity;
+    }
+
+    /**
+     * 특정 위치에 나무 스폰
+     * @param {number} x - 월드 X 좌표
+     * @param {number} y - 월드 Y 좌표
+     * @param {number} size - 나무 크기 (기본 5)
+     */
+    spawnTree(x, y, size = 5) {
+        const tree = {
+            x, y,
+            size: size,
+            color: `hsl(${120 + Math.random() * 30}, ${40 + Math.random() * 20}%, ${20 + Math.random() * 15}%)`,
+        };
+        this.trees.push(tree);
+        this.game.events.emit('entity:spawned', tree, 'tree');
+        return tree;
     }
 }

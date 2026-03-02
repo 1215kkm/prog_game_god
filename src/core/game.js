@@ -1,4 +1,6 @@
 import { TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS, ERAS } from './constants.js';
+import { EventBus } from './eventBus.js';
+import { Registry } from './registry.js';
 import { World } from '../world/world.js';
 import { Renderer } from '../ui/renderer.js';
 import { Camera } from '../ui/camera.js';
@@ -30,6 +32,10 @@ export class Game {
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
+
+        // Extension systems (initialize BEFORE other systems)
+        this.events = new EventBus();
+        this.registry = new Registry();
 
         // Core systems
         this.world = new World();
@@ -97,8 +103,11 @@ export class Game {
         // Day/season/year tracking
         if (this.tick % TICKS_PER_DAY === 0) {
             this.day++;
+            this.events.emit('day:started', this.day);
             if (this.day % DAYS_PER_SEASON === 0) {
+                const oldSeason = this.season;
                 this.season = (this.season + 1) % 4;
+                this.events.emit('season:changed', oldSeason, this.season);
                 if (this.season === 0) {
                     this.year++;
                     this.simulation.onNewYear();
@@ -107,13 +116,22 @@ export class Game {
             }
         }
 
+        // Night/day transition events
+        const t = this.timeOfDay;
+        const prevT = ((this.tick - 1) % TICKS_PER_DAY) / TICKS_PER_DAY;
+        if (prevT <= 0.25 && t > 0.25) this.events.emit('dawn:started');
+        if (prevT <= 0.75 && t > 0.75) this.events.emit('night:started');
+
         this.weather.update();
         this.entityManager.update();
         this.simulation.update();
         this.godPowers.updateCooldowns();
+        this.registry.updateWorldModifiers(this);
         this.cinematicCamera.update();
         this.ambientMode.update();
         this.ui.update();
+
+        this.events.emit('tick:update', this.tick);
     }
 
     render() {

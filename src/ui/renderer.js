@@ -63,12 +63,15 @@ export class Renderer {
         this.renderBuildingSmoke();
         this.renderAnimals();
         this.renderPeople();
+        this.renderCustomEntities();
+        this.renderCustomLayers('below');
         this.renderParticles();
         this.renderShockwaves();
         this.renderGlowPoints();
         this.renderWeatherParticles();
         this.renderFireflies();
         this.renderDayNightOverlay();
+        this.renderCustomLayers('above');
 
         ctx.restore();
 
@@ -1159,6 +1162,64 @@ export class Renderer {
         grd.addColorStop(1, 'rgba(0,0,0,0.35)');
         ctx.fillStyle = grd;
         ctx.fillRect(0, 0, w, h);
+    }
+
+    // ===== CUSTOM ENTITIES (registry-based rendering) =====
+    renderCustomEntities() {
+        const ctx = this.ctx;
+        const cam = this.game.camera;
+        const { startX, startY, endX, endY } = cam.getVisibleTileRange();
+
+        for (const ce of this.game.entityManager.customEntities) {
+            if (!ce.alive) continue;
+            if (ce.x < startX - 2 || ce.x > endX + 2 || ce.y < startY - 2 || ce.y > endY + 2) continue;
+
+            const sx = ce.x * TILE_SIZE;
+            const sy = ce.y * TILE_SIZE;
+
+            // Custom render function if defined
+            if (ce.def.render) {
+                ce.def.render(ctx, ce, TILE_SIZE, this.sprites);
+            } else {
+                // Default: colored circle with label
+                const size = (ce.size || 1) * TILE_SIZE * 0.4;
+                ctx.fillStyle = ce.color || '#ff00ff';
+                ctx.beginPath();
+                ctx.arc(sx, sy, size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Name label
+                if (cam.zoom > 0.8) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.fillRect(sx - 16, sy - size - 12, 32, 10);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '7px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(ce.def.name, sx, sy - size - 4);
+                    ctx.textAlign = 'start';
+                }
+            }
+
+            // Shadow
+            ctx.fillStyle = 'rgba(10,15,40,0.1)';
+            ctx.beginPath();
+            ctx.ellipse(sx, sy + 3, 6 * (ce.size || 1), 2.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // ===== CUSTOM RENDER LAYERS (registry-based) =====
+    renderCustomLayers(phase) {
+        const layers = this.game.registry.getRenderLayers();
+        for (const layer of layers) {
+            const isBelow = layer.zIndex < 100;
+            if ((phase === 'below' && isBelow) || (phase === 'above' && !isBelow)) {
+                layer.render(this.ctx, this.game, this.game.camera);
+            }
+        }
     }
 
     // ===== TILT-SHIFT BLUR (diorama depth-of-field) =====

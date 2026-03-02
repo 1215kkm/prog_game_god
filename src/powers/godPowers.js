@@ -34,6 +34,21 @@ export class GodPowers {
         const tileX = Math.floor(worldX);
         const tileY = Math.floor(worldY);
 
+        // 레지스트리에 등록된 커스텀 파워 확인
+        const customPower = this.game.registry.getPower(this.activePower);
+        if (customPower) {
+            customPower.effect(this.game, worldX, worldY);
+            this.cooldowns[this.activePower] = customPower.cooldown || 60;
+            this.game.simulation.faith += customPower.faithGain || 2;
+            this.game.events.emit('power:used', this.activePower, worldX, worldY);
+            if (customPower.sound) this.game.sound.play(customPower.sound);
+            if (customPower.particle) {
+                const renderer = this.game.renderer;
+                renderer.addShockwave(worldX, worldY, { maxRadius: 8, life: 30, color: '255,215,0', lineWidth: 2 });
+            }
+            return;
+        }
+
         switch (this.activePower) {
             case 'sun':
                 this.game.weather.setWeather('clear', true);
@@ -84,6 +99,7 @@ export class GodPowers {
 
         this.cooldowns[this.activePower] = 60; // cooldown ticks
         this.game.simulation.faith += 2;
+        this.game.events.emit('power:used', this.activePower, worldX, worldY);
 
         // Sound effects
         const soundMap = {
