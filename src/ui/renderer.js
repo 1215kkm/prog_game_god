@@ -886,8 +886,8 @@ export class Renderer {
                 }
             }
 
-            // Building windows glow at night
-            if (!this.game.isDaytime && b.buildingType !== 'FARM') {
+            // Building windows glow at night (only at low speed)
+            if (this.game.speed <= 2 && !this.game.isDaytime && b.buildingType !== 'FARM') {
                 ctx.fillStyle = 'rgba(255,220,120,0.15)';
                 const sx = b.x * TILE_SIZE;
                 const sy = b.y * TILE_SIZE;
@@ -900,6 +900,9 @@ export class Renderer {
 
     // ===== FIREFLIES (night ambient effect) =====
     renderFireflies() {
+        // Skip at high speed (no night visual anyway)
+        if (this.game.speed > 2) return;
+
         const ctx = this.ctx;
         const cam = this.game.camera;
         const timeOfDay = this.game.timeOfDay;
@@ -945,10 +948,63 @@ export class Renderer {
         }
     }
 
-    // ===== DAY/NIGHT (icon-only, no screen overlay) =====
+    // ===== DAY/NIGHT (speed-adaptive: slow=visual overlay, fast=icon only) =====
     renderDayNightOverlay() {
-        // Day/night is shown only via the HUD time icon (☀️🌙🌅🌇)
-        // No screen-darkening overlay - keeps the view always bright and clear
+        // At high speed (3x+), skip overlay to prevent flickering - icon only
+        if (this.game.speed > 2) return;
+
+        const ctx = this.ctx;
+        const cam = this.game.camera;
+        const timeOfDay = this.game.timeOfDay;
+        const w = this.game.canvas.width / cam.zoom;
+        const h = this.game.canvas.height / cam.zoom;
+
+        // Smooth night intensity with gradual transitions
+        let nightAlpha = 0;
+        if (timeOfDay < 0.25) {
+            nightAlpha = 0.18 * Math.max(0, 1 - timeOfDay / 0.25);
+        } else if (timeOfDay > 0.75) {
+            nightAlpha = 0.18 * Math.min(1, (timeOfDay - 0.75) / 0.07);
+        }
+
+        if (nightAlpha > 0.005) {
+            ctx.fillStyle = `rgba(8,8,35,${nightAlpha})`;
+            ctx.fillRect(cam.x, cam.y, w, h);
+        }
+
+        // Warm tint during dawn
+        if (timeOfDay > 0.2 && timeOfDay < 0.3) {
+            const dawnAlpha = Math.max(0, (1 - Math.abs(timeOfDay - 0.25) / 0.05)) * 0.04;
+            if (dawnAlpha > 0.003) {
+                ctx.fillStyle = `rgba(255,150,60,${dawnAlpha})`;
+                ctx.fillRect(cam.x, cam.y, w, h);
+            }
+        }
+        // Warm tint during dusk
+        if (timeOfDay > 0.72 && timeOfDay < 0.82) {
+            const duskAlpha = Math.max(0, (1 - Math.abs(timeOfDay - 0.77) / 0.05)) * 0.04;
+            if (duskAlpha > 0.003) {
+                ctx.fillStyle = `rgba(255,100,40,${duskAlpha})`;
+                ctx.fillRect(cam.x, cam.y, w, h);
+            }
+        }
+
+        // Stars at deep night
+        if (timeOfDay < 0.15 || timeOfDay > 0.87) {
+            const nightDepth = timeOfDay < 0.15
+                ? 1 - timeOfDay / 0.15
+                : (timeOfDay - 0.87) / 0.13;
+
+            for (let i = 0; i < 40; i++) {
+                const sx = cam.x + ((i * 137.3 + 47.1) % 1.0) * w;
+                const sy = cam.y + ((i * 241.7 + 93.5) % 1.0) * (h * 0.4);
+                const twinkle = Math.sin(this.game.tick * 0.015 + i * 1.5) * 0.3 + 0.7;
+                const starAlpha = nightDepth * twinkle * 0.3;
+                ctx.fillStyle = `rgba(255,255,240,${starAlpha})`;
+                const size = (i % 3 === 0) ? 1.5 : 0.8;
+                ctx.fillRect(sx, sy, size, size);
+            }
+        }
     }
 
     // ===== SHOCKWAVE RINGS (god power feedback) =====
