@@ -105,7 +105,7 @@ export const NPC_STATE = {
 };
 
 // Simulation
-export const TICKS_PER_DAY = 120;
-export const DAYS_PER_SEASON = 30;
+export const TICKS_PER_DAY = 600;
+export const DAYS_PER_SEASON = 10;
 export const SEASONS_PER_YEAR = 4;
 export const TICKS_PER_YEAR = TICKS_PER_DAY * DAYS_PER_SEASON * SEASONS_PER_YEAR;

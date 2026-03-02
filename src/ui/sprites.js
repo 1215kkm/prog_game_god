@@ -25,7 +25,7 @@ export class SpriteSheet {
         c.width = width;
         c.height = height;
         const ctx = c.getContext('2d');
-        ctx.imageSmoothingEnabled = false;
+        ctx.imageSmoothingEnabled = true;
         drawFn(ctx, width, height);
         return c;
     }

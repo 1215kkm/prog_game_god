@@ -27,6 +27,10 @@ export class Renderer {
 
         // God power glow points (persistent for a while)
         this.glowPoints = [];
+
+        // Offscreen canvas for smooth terrain rendering
+        this._terrainCanvas = null;
+        this._terrainCtx = null;
     }
 
     render() {
@@ -34,7 +38,8 @@ export class Renderer {
         const cam = this.game.camera;
         cam.update();
 
-        ctx.imageSmoothingEnabled = false; // Pixel art!
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
 
         ctx.save();
         ctx.translate(cam.shakeX, cam.shakeY);
@@ -72,20 +77,55 @@ export class Renderer {
         }
     }
 
-    // ===== TERRAIN =====
+    // ===== TERRAIN (smooth offscreen canvas rendering) =====
     renderTerrain() {
         const ctx = this.ctx;
         const cam = this.game.camera;
         const world = this.game.world;
-        const { startX, startY, endX, endY } = cam.getVisibleTileRange();
+        const range = cam.getVisibleTileRange();
 
-        for (let y = Math.max(0, startY); y < Math.min(world.height, endY); y++) {
-            for (let x = Math.max(0, startX); x < Math.min(world.width, endX); x++) {
+        // Add 1-tile padding for smooth edge blending
+        const sx = Math.max(0, range.startX - 1);
+        const sy = Math.max(0, range.startY - 1);
+        const ex = Math.min(world.width, range.endX + 1);
+        const ey = Math.min(world.height, range.endY + 1);
+        const rw = ex - sx;
+        const rh = ey - sy;
+
+        if (rw <= 0 || rh <= 0) return;
+
+        // Lazy-init offscreen canvas
+        if (!this._terrainCanvas) {
+            this._terrainCanvas = document.createElement('canvas');
+            this._terrainCtx = this._terrainCanvas.getContext('2d');
+        }
+        if (this._terrainCanvas.width < rw || this._terrainCanvas.height < rh) {
+            this._terrainCanvas.width = rw + 4;
+            this._terrainCanvas.height = rh + 4;
+        }
+
+        const tctx = this._terrainCtx;
+
+        // Draw each tile as 1 pixel on offscreen canvas
+        for (let y = sy; y < ey; y++) {
+            for (let x = sx; x < ex; x++) {
                 const terrain = world.getTerrain(x, y);
-                ctx.fillStyle = this.getTerrainColor(terrain, x, y);
-                ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE + 1, TILE_SIZE + 1);
+                tctx.fillStyle = this.getTerrainColor(terrain, x, y);
+                tctx.fillRect(x - sx, y - sy, 1, 1);
             }
         }
+
+        // Draw scaled up with bilinear smoothing → eliminates grid pattern
+        const prevSmoothing = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(
+            this._terrainCanvas,
+            0, 0, rw, rh,
+            sx * TILE_SIZE, sy * TILE_SIZE,
+            rw * TILE_SIZE, rh * TILE_SIZE
+        );
+        ctx.imageSmoothingEnabled = prevSmoothing;
     }
 
     renderTerrainDetails() {
@@ -233,7 +273,7 @@ export class Renderer {
                     }
                 }
 
-                // Terrain edge blending (soft borders between terrain types)
+                // Terrain edge blending (wider, smoother borders between terrain types)
                 if (cam.zoom > 0.7) {
                     for (const [dx, dy] of [[1,0],[0,1]]) {
                         const adjTerrain = world.getTerrain(x + dx, y + dy);
@@ -241,9 +281,12 @@ export class Renderer {
                             const adjColor = TERRAIN_COLORS[adjTerrain];
                             if (adjColor) {
                                 ctx.fillStyle = this.tintColor(adjColor, TERRAIN_COLORS[terrain] || '#000', 0.5);
-                                ctx.globalAlpha = 0.15;
-                                if (dx === 1) ctx.fillRect(px + T - 3, py, 3, T);
-                                if (dy === 1) ctx.fillRect(px, py + T - 3, T, 3);
+                                ctx.globalAlpha = 0.25;
+                                if (dx === 1) ctx.fillRect(px + T - 6, py, 6, T);
+                                if (dy === 1) ctx.fillRect(px, py + T - 6, T, 6);
+                                ctx.globalAlpha = 0.1;
+                                if (dx === 1) ctx.fillRect(px + T - 10, py, 4, T);
+                                if (dy === 1) ctx.fillRect(px, py + T - 10, T, 4);
                                 ctx.globalAlpha = 1;
                             }
                         }
@@ -253,16 +296,36 @@ export class Renderer {
         }
     }
 
+    // Smooth 2D noise (no grid artifacts)
+    _smoothNoise(x, y) {
+        const ix = Math.floor(x);
+        const iy = Math.floor(y);
+        const fx = x - ix;
+        const fy = y - iy;
+        const sx = fx * fx * (3 - 2 * fx);
+        const sy = fy * fy * (3 - 2 * fy);
+        const n00 = this._tileHash(ix, iy);
+        const n10 = this._tileHash(ix + 1, iy);
+        const n01 = this._tileHash(ix, iy + 1);
+        const n11 = this._tileHash(ix + 1, iy + 1);
+        return (n00 * (1 - sx) + n10 * sx) * (1 - sy) +
+               (n01 * (1 - sx) + n11 * sx) * sy;
+    }
+
+    _tileHash(x, y) {
+        return (((x * 374761393 + y * 668265263) ^ 0x5DEECE66) >>> 0) / 4294967296;
+    }
+
     getTerrainColor(terrain, x, y) {
         const baseColor = TERRAIN_COLORS[terrain];
         if (!baseColor) return '#000';
 
         const season = this.game.season;
 
-        // Richer color variation using multi-octave hash for natural feel
-        const hash1 = ((x * 374761393 + y * 668265263) >>> 0) % 100;
-        const hash2 = ((x * 127849 + y * 893521) >>> 0) % 100;
-        const variation = (hash1 - 50) * 0.15 + (hash2 - 50) * 0.08;
+        // Smooth noise-based variation (eliminates per-tile grid pattern)
+        const n1 = this._smoothNoise(x * 0.3, y * 0.3);
+        const n2 = this._smoothNoise(x * 0.7 + 50, y * 0.7 + 50);
+        const variation = (n1 - 0.5) * 10 + (n2 - 0.5) * 5;
 
         if (terrain === TERRAIN.GRASS || terrain === TERRAIN.FOREST || terrain === TERRAIN.FARMLAND) {
             let color;
@@ -277,21 +340,20 @@ export class Renderer {
         }
 
         if (terrain === TERRAIN.DEEP_WATER || terrain === TERRAIN.SHALLOW_WATER) {
-            const wave = Math.sin(this.game.tick * 0.02 + x * 0.3 + y * 0.2) * 10;
-            const wave2 = Math.cos(this.game.tick * 0.015 + x * 0.5 - y * 0.3) * 5;
-            return this.adjustBrightness(baseColor, wave + wave2 + variation * 0.5);
+            const wave = Math.sin(this.game.tick * 0.02 + x * 0.3 + y * 0.2) * 8;
+            const wave2 = Math.cos(this.game.tick * 0.015 + x * 0.5 - y * 0.3) * 4;
+            return this.adjustBrightness(baseColor, wave + wave2 + variation * 0.4);
         }
 
         if (terrain === TERRAIN.SAND) {
-            return this.adjustBrightness(baseColor, variation + Math.sin(x * 0.8 + y * 0.6) * 4);
+            return this.adjustBrightness(baseColor, variation + Math.sin(x * 0.8 + y * 0.6) * 3);
         }
 
         if (terrain === TERRAIN.MOUNTAIN || terrain === TERRAIN.HILL) {
-            // Rocky texture variation
-            return this.adjustBrightness(baseColor, variation * 1.5);
+            return this.adjustBrightness(baseColor, variation * 1.2);
         }
 
-        return this.adjustBrightness(baseColor, variation * 0.5);
+        return this.adjustBrightness(baseColor, variation * 0.4);
     }
 
     tintColor(base, tint, amount) {
@@ -381,10 +443,10 @@ export class Renderer {
             const sprite = isPine && season !== 2 ? pineSprite : treeSprite;
 
             if (sprite) {
-                const scale = tree.size / 4;
+                const scale = tree.size / 3;
                 ctx.drawImage(sprite,
                     sx - sprite.width * scale / 2,
-                    sy - sprite.height * scale + 6,
+                    sy - sprite.height * scale + 8,
                     sprite.width * scale,
                     sprite.height * scale
                 );
@@ -515,7 +577,7 @@ export class Renderer {
             }
 
             if (sprite) {
-                const scale = p.age < 15 ? 1.0 : 1.2;
+                const scale = p.age < 15 ? 1.6 : 2.0;
                 const w = sprite.width * scale;
                 const h = sprite.height * scale;
                 ctx.drawImage(sprite, sx - w / 2, sy - h + 4, w, h);
@@ -580,7 +642,7 @@ export class Renderer {
                     offsetY = Math.sin(this.game.tick * 0.05 + a.x * 0.5) * 2;
                 }
 
-                const scale = 1.5;
+                const scale = 2.2;
                 ctx.drawImage(sprite,
                     sx - sprite.width * scale / 2,
                     sy - sprite.height * scale / 2 + offsetY,
@@ -883,37 +945,10 @@ export class Renderer {
         }
     }
 
-    // ===== DAY/NIGHT (subtle, icon-based - no heavy overlay) =====
+    // ===== DAY/NIGHT (icon-only, no screen overlay) =====
     renderDayNightOverlay() {
-        const ctx = this.ctx;
-        const cam = this.game.camera;
-        const timeOfDay = this.game.timeOfDay;
-
-        // Very subtle tint only - no heavy brightness change
-        const isNight = timeOfDay < 0.2 || timeOfDay > 0.82;
-        if (isNight) {
-            ctx.fillStyle = 'rgba(10,10,40,0.08)';
-            ctx.fillRect(cam.x, cam.y,
-                this.game.canvas.width / cam.zoom,
-                this.game.canvas.height / cam.zoom);
-        }
-
-        // Stars at night (world-space) - kept for ambiance
-        if (timeOfDay < 0.18 || timeOfDay > 0.84) {
-            const nightAlpha = timeOfDay < 0.18
-                ? 1 - timeOfDay / 0.18
-                : (timeOfDay - 0.84) / 0.16;
-
-            for (let i = 0; i < 40; i++) {
-                const sx = cam.x + ((i * 137.3 + 47.1) % 1.0) * (this.game.canvas.width / cam.zoom);
-                const sy = cam.y + ((i * 241.7 + 93.5) % 1.0) * (this.game.canvas.height / cam.zoom * 0.4);
-                const twinkle = Math.sin(this.game.tick * 0.02 + i * 1.5) * 0.3 + 0.7;
-                const starAlpha = nightAlpha * twinkle * 0.4;
-                ctx.fillStyle = `rgba(255,255,240,${starAlpha})`;
-                const size = (i % 3 === 0) ? 1.5 : 0.8;
-                ctx.fillRect(sx, sy, size, size);
-            }
-        }
+        // Day/night is shown only via the HUD time icon (☀️🌙🌅🌇)
+        // No screen-darkening overlay - keeps the view always bright and clear
     }
 
     // ===== SHOCKWAVE RINGS (god power feedback) =====

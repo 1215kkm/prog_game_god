@@ -141,20 +141,7 @@ export class WeatherSystem {
             }
         }
 
-        // Day/night cycle overlay
-        const timeOfDay = this.game.timeOfDay;
-        let nightAlpha = 0;
-        if (timeOfDay < 0.2 || timeOfDay > 0.8) {
-            nightAlpha = 0.3;
-        } else if (timeOfDay < 0.3) {
-            nightAlpha = 0.3 * (1 - (timeOfDay - 0.2) / 0.1);
-        } else if (timeOfDay > 0.7) {
-            nightAlpha = 0.3 * ((timeOfDay - 0.7) / 0.1);
-        }
-        if (nightAlpha > 0) {
-            const current = overlay.style.backgroundColor;
-            overlay.style.backgroundColor = `rgba(10,10,40,${nightAlpha})`;
-        }
+        // Day/night is handled by renderer.js canvas overlay only
     }
 
     strikeLightning() {
