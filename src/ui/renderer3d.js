@@ -674,104 +674,124 @@ export class Renderer3D {
         const isChild = person.age < 15;
         const s = isChild ? 0.55 : 0.85;
 
-        // Body (torso)
         const bodyMat = new THREE.MeshStandardMaterial({
             color: bodyColor, roughness: 0.6, metalness: 0.05
         });
-        const bodyGeo = new THREE.CapsuleGeometry(0.12 * s, 0.22 * s, 4, 8);
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 0.35 * s;
+        const skinTone = person.gender === 'female' ? 0xf5c8a0 : 0xe8b888;
+        const skinMat = new THREE.MeshStandardMaterial({ color: skinTone, roughness: 0.7 });
+        const legMat = new THREE.MeshStandardMaterial({
+            color: bodyColor.clone().multiplyScalar(0.7), roughness: 0.7
+        });
+
+        // Body (torso)
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.12 * s, 0.2 * s, 4, 8), bodyMat);
+        body.position.y = 0.38 * s;
         body.castShadow = true;
         group.add(body);
 
         // Head
-        const skinTone = person.gender === 'female' ? 0xf5c8a0 : 0xe8b888;
-        const headMat = new THREE.MeshStandardMaterial({
-            color: skinTone, roughness: 0.7, metalness: 0
-        });
-        const headGeo = new THREE.SphereGeometry(0.1 * s, 8, 6);
-        const head = new THREE.Mesh(headGeo, headMat);
-        head.position.y = 0.6 * s;
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.1 * s, 8, 6), skinMat);
+        head.position.y = 0.62 * s;
         head.castShadow = true;
         group.add(head);
 
         // Hair
         const hairColors = [0x2a1a0a, 0x4a2a10, 0x1a0a00, 0x6a4420, 0x3a2010];
-        const hairColor = hairColors[Math.floor(Math.abs(person.name?.charCodeAt(0) || 0) % hairColors.length)];
-        const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.9 });
-        const hairGeo = new THREE.SphereGeometry(0.105 * s, 8, 4, 0, Math.PI * 2, 0, Math.PI * 0.6);
-        const hair = new THREE.Mesh(hairGeo, hairMat);
-        hair.position.y = 0.63 * s;
+        const hairIdx = Math.floor(Math.abs(person.name?.charCodeAt(0) || 0) % hairColors.length);
+        const hairMat = new THREE.MeshStandardMaterial({ color: hairColors[hairIdx], roughness: 0.9 });
+        const hair = new THREE.Mesh(
+            new THREE.SphereGeometry(0.105 * s, 8, 4, 0, Math.PI * 2, 0, Math.PI * 0.6), hairMat);
+        hair.position.y = 0.65 * s;
         group.add(hair);
 
-        // Arms
-        for (const dx of [-1, 1]) {
-            const arm = new THREE.Mesh(
-                new THREE.CapsuleGeometry(0.035 * s, 0.18 * s, 3, 6), bodyMat);
-            arm.position.set(dx * 0.16 * s, 0.32 * s, 0);
-            arm.rotation.z = dx * 0.15;
-            arm.castShadow = true;
-            group.add(arm);
-        }
+        // === Animated limbs using pivot groups ===
+        // Left Arm pivot (at shoulder)
+        const leftArmPivot = new THREE.Group();
+        leftArmPivot.position.set(-0.15 * s, 0.45 * s, 0);
+        const leftArmMesh = new THREE.Mesh(
+            new THREE.CapsuleGeometry(0.035 * s, 0.18 * s, 3, 6), bodyMat);
+        leftArmMesh.position.y = -0.1 * s;
+        leftArmMesh.castShadow = true;
+        leftArmPivot.add(leftArmMesh);
+        group.add(leftArmPivot);
 
-        // Legs
-        const legMat = new THREE.MeshStandardMaterial({
-            color: bodyColor.clone().multiplyScalar(0.7), roughness: 0.7
-        });
-        for (const dx of [-1, 1]) {
-            const leg = new THREE.Mesh(
-                new THREE.CapsuleGeometry(0.04 * s, 0.16 * s, 3, 6), legMat);
-            leg.position.set(dx * 0.06 * s, 0.1 * s, 0);
-            leg.castShadow = true;
-            group.add(leg);
-        }
+        // Right Arm pivot
+        const rightArmPivot = new THREE.Group();
+        rightArmPivot.position.set(0.15 * s, 0.45 * s, 0);
+        const rightArmMesh = new THREE.Mesh(
+            new THREE.CapsuleGeometry(0.035 * s, 0.18 * s, 3, 6), bodyMat);
+        rightArmMesh.position.y = -0.1 * s;
+        rightArmMesh.castShadow = true;
+        rightArmPivot.add(rightArmMesh);
+        group.add(rightArmPivot);
 
-        // Criminal mark (red aura ring on ground)
+        // Left Leg pivot (at hip)
+        const leftLegPivot = new THREE.Group();
+        leftLegPivot.position.set(-0.06 * s, 0.22 * s, 0);
+        const leftLegMesh = new THREE.Mesh(
+            new THREE.CapsuleGeometry(0.04 * s, 0.16 * s, 3, 6), legMat);
+        leftLegMesh.position.y = -0.1 * s;
+        leftLegMesh.castShadow = true;
+        leftLegPivot.add(leftLegMesh);
+        group.add(leftLegPivot);
+
+        // Right Leg pivot
+        const rightLegPivot = new THREE.Group();
+        rightLegPivot.position.set(0.06 * s, 0.22 * s, 0);
+        const rightLegMesh = new THREE.Mesh(
+            new THREE.CapsuleGeometry(0.04 * s, 0.16 * s, 3, 6), legMat);
+        rightLegMesh.position.y = -0.1 * s;
+        rightLegMesh.castShadow = true;
+        rightLegPivot.add(rightLegMesh);
+        group.add(rightLegPivot);
+
+        // Store limb references for animation
+        group.userData.limbs = {
+            leftArm: leftArmPivot,
+            rightArm: rightArmPivot,
+            leftLeg: leftLegPivot,
+            rightLeg: rightLegPivot,
+            head: head,
+            scale: s
+        };
+
+        // Personality decorations
         if (personality === 'CRIMINAL') {
-            const auraGeo = new THREE.RingGeometry(0.2, 0.28, 16);
-            const auraMat = new THREE.MeshBasicMaterial({
-                color: 0xff0000, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
-            const aura = new THREE.Mesh(auraGeo, auraMat);
+            const aura = new THREE.Mesh(
+                new THREE.RingGeometry(0.2, 0.28, 16),
+                new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
             aura.rotation.x = -Math.PI / 2;
             aura.position.y = 0.02;
             group.add(aura);
         }
-
-        // Leader crown
         if (personality === 'LEADER') {
-            const crownMat = new THREE.MeshStandardMaterial({
-                color: 0xffd700, roughness: 0.3, metalness: 0.5 });
             const crown = new THREE.Mesh(
-                new THREE.ConeGeometry(0.07 * s, 0.1 * s, 5), crownMat);
-            crown.position.y = 0.75 * s;
+                new THREE.ConeGeometry(0.07 * s, 0.1 * s, 5),
+                new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.3, metalness: 0.5 }));
+            crown.position.y = 0.77 * s;
             group.add(crown);
         }
-
-        // Scholar hat
         if (personality === 'SCHOLAR') {
             const hatMat = new THREE.MeshStandardMaterial({ color: 0x222244, roughness: 0.6 });
             const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.1 * s, 0.08 * s, 8), hatMat);
-            hat.position.y = 0.72 * s;
+            hat.position.y = 0.74 * s;
             group.add(hat);
             const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * s, 0.14 * s, 0.015 * s, 8), hatMat);
-            brim.position.y = 0.68 * s;
+            brim.position.y = 0.7 * s;
             group.add(brim);
         }
-
-        // Warrior shield
         if (personality === 'WARRIOR') {
-            const shieldMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.4, metalness: 0.5 });
-            const shield = new THREE.Mesh(new THREE.CircleGeometry(0.1 * s, 6), shieldMat);
-            shield.position.set(-0.2 * s, 0.3 * s, 0);
+            const shield = new THREE.Mesh(
+                new THREE.CircleGeometry(0.1 * s, 6),
+                new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.4, metalness: 0.5 }));
+            shield.position.set(-0.22 * s, 0.35 * s, 0);
             shield.rotation.y = Math.PI / 2;
             group.add(shield);
         }
-
-        // Healer glow
         if (personality === 'HEALER') {
-            const glowMat = new THREE.MeshBasicMaterial({
-                color: 0x44ff88, transparent: true, opacity: 0.3 });
-            const glow = new THREE.Mesh(new THREE.SphereGeometry(0.3 * s, 8, 6), glowMat);
+            const glow = new THREE.Mesh(
+                new THREE.SphereGeometry(0.3 * s, 8, 6),
+                new THREE.MeshBasicMaterial({ color: 0x44ff88, transparent: true, opacity: 0.25 }));
             glow.position.y = 0.35 * s;
             group.add(glow);
         }
@@ -780,123 +800,123 @@ export class Renderer3D {
     }
 
     // ==================== ANIMALS ====================
+    // Helper: create a 4-legged animal with animated leg pivots
+    _makeQuadruped(group, mat, bodyH, bodyR, bodyLen, legR, legH, headR, headOffset) {
+        // Body (horizontal capsule)
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(bodyR, bodyLen, 4, 8), mat);
+        body.position.y = bodyH;
+        body.rotation.z = Math.PI / 2;
+        body.castShadow = true;
+        group.add(body);
+
+        // 4 leg pivots at hips/shoulders
+        const legs = { fl: null, fr: null, bl: null, br: null };
+        const positions = [
+            ['fl', -bodyR * 0.6, bodyH - bodyR * 0.2, -bodyLen * 0.35],
+            ['fr', bodyR * 0.6, bodyH - bodyR * 0.2, -bodyLen * 0.35],
+            ['bl', -bodyR * 0.6, bodyH - bodyR * 0.2, bodyLen * 0.35],
+            ['br', bodyR * 0.6, bodyH - bodyR * 0.2, bodyLen * 0.35],
+        ];
+        for (const [name, x, y, z] of positions) {
+            const pivot = new THREE.Group();
+            pivot.position.set(x, y, z);
+            const legMesh = new THREE.Mesh(
+                new THREE.CylinderGeometry(legR, legR * 0.8, legH, 4), mat);
+            legMesh.position.y = -legH / 2;
+            legMesh.castShadow = true;
+            pivot.add(legMesh);
+            group.add(pivot);
+            legs[name] = pivot;
+        }
+
+        group.userData.limbs = { ...legs, type: 'quadruped' };
+        return { body };
+    }
+
     createAnimalMesh(animal) {
         const type = animal.type;
         const config = ANIMAL_TYPE[type];
         if (!config) return null;
 
         const color = new THREE.Color(config.color);
-        const mat = new THREE.MeshStandardMaterial({
-            color, roughness: 0.8, metalness: 0
-        });
+        const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0 });
         const group = new THREE.Group();
 
         switch (type) {
             case 'RABBIT': {
                 const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), mat);
-                body.position.y = 0.12;
+                body.position.y = 0.15;
                 body.scale.set(1, 0.8, 1.3);
                 body.castShadow = true;
                 group.add(body);
                 const head = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), mat);
-                head.position.set(0, 0.2, -0.1);
+                head.position.set(0, 0.22, -0.12);
                 group.add(head);
-                // Ears
                 for (const dx of [-0.04, 0.04]) {
-                    const ear = new THREE.Mesh(
-                        new THREE.CapsuleGeometry(0.02, 0.1, 2, 4), mat);
-                    ear.position.set(dx, 0.32, -0.1);
+                    const ear = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.1, 2, 4), mat);
+                    ear.position.set(dx, 0.34, -0.1);
                     group.add(ear);
                 }
-                // Tail
-                const tailMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
-                const tail = new THREE.Mesh(new THREE.SphereGeometry(0.04, 4, 3), tailMat);
-                tail.position.set(0, 0.12, 0.14);
+                const tail = new THREE.Mesh(new THREE.SphereGeometry(0.04, 4, 3),
+                    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }));
+                tail.position.set(0, 0.14, 0.14);
                 group.add(tail);
+                // Animated back legs
+                const legs = {};
+                for (const [name, x, z] of [['bl', -0.06, 0.05], ['br', 0.06, 0.05]]) {
+                    const pivot = new THREE.Group();
+                    pivot.position.set(x, 0.1, z);
+                    const legM = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, 0.1, 4), mat);
+                    legM.position.y = -0.05;
+                    pivot.add(legM);
+                    group.add(pivot);
+                    legs[name] = pivot;
+                }
+                group.userData.limbs = { ...legs, type: 'rabbit' };
                 break;
             }
             case 'DEER': {
-                // Body
-                const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.25, 4, 8), mat);
-                body.position.y = 0.32;
-                body.rotation.z = Math.PI / 2;
-                body.castShadow = true;
-                group.add(body);
+                this._makeQuadruped(group, mat, 0.35, 0.13, 0.25, 0.025, 0.25, 0.08, { y: 0.42, z: -0.22 });
                 // Head
                 const headMat = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.9) });
                 const head = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), headMat);
-                head.position.set(0, 0.4, -0.22);
+                head.position.set(0, 0.42, -0.22);
                 group.add(head);
-                // Legs (4 legs)
-                for (const dx of [-0.1, 0.1]) {
-                    for (const dz of [-0.08, 0.08]) {
-                        const leg = new THREE.Mesh(
-                            new THREE.CylinderGeometry(0.025, 0.02, 0.25, 4), mat);
-                        leg.position.set(dx, 0.12, dz);
-                        group.add(leg);
-                    }
-                }
                 // Antlers
                 const antlerMat = new THREE.MeshStandardMaterial({ color: 0x8B6914 });
                 for (const dx of [-0.05, 0.05]) {
-                    const antler = new THREE.Mesh(
-                        new THREE.ConeGeometry(0.02, 0.18, 3), antlerMat);
-                    antler.position.set(dx, 0.52, -0.2);
+                    const antler = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.18, 3), antlerMat);
+                    antler.position.set(dx, 0.55, -0.2);
                     antler.rotation.z = dx > 0 ? -0.3 : 0.3;
                     group.add(antler);
                 }
                 break;
             }
             case 'WOLF': {
-                const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.22, 4, 8), mat);
-                body.position.y = 0.22;
-                body.rotation.z = Math.PI / 2;
-                body.castShadow = true;
-                group.add(body);
+                this._makeQuadruped(group, mat, 0.24, 0.1, 0.22, 0.025, 0.18, 0.07, { y: 0.28, z: -0.2 });
+                // Head (snout)
                 const head = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.14, 6), mat);
-                head.position.set(0, 0.26, -0.2);
+                head.position.set(0, 0.28, -0.22);
                 head.rotation.x = Math.PI / 2;
                 group.add(head);
-                // Legs
-                for (const dx of [-0.08, 0.08]) {
-                    for (const dz of [-0.06, 0.06]) {
-                        const leg = new THREE.Mesh(
-                            new THREE.CylinderGeometry(0.025, 0.02, 0.18, 4), mat);
-                        leg.position.set(dx, 0.09, dz);
-                        group.add(leg);
-                    }
-                }
                 // Tail
                 const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.12, 3, 4), mat);
-                tail.position.set(0, 0.2, 0.18);
+                tail.position.set(0, 0.22, 0.2);
                 tail.rotation.x = -0.8;
                 group.add(tail);
                 break;
             }
             case 'BEAR': {
-                const body = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), mat);
-                body.position.y = 0.25;
-                body.scale.set(1.2, 0.9, 1);
-                body.castShadow = true;
-                group.add(body);
+                this._makeQuadruped(group, mat, 0.3, 0.18, 0.2, 0.04, 0.22, 0.12, { y: 0.4, z: -0.16 });
+                // Head
                 const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), mat);
-                head.position.set(0, 0.38, -0.16);
+                head.position.set(0, 0.4, -0.18);
                 head.castShadow = true;
                 group.add(head);
-                // Ears
                 for (const dx of [-0.08, 0.08]) {
                     const ear = new THREE.Mesh(new THREE.SphereGeometry(0.03, 4, 3), mat);
-                    ear.position.set(dx, 0.48, -0.14);
+                    ear.position.set(dx, 0.5, -0.16);
                     group.add(ear);
-                }
-                // Legs
-                for (const dx of [-0.12, 0.12]) {
-                    for (const dz of [-0.06, 0.06]) {
-                        const leg = new THREE.Mesh(
-                            new THREE.CylinderGeometry(0.04, 0.04, 0.2, 5), mat);
-                        leg.position.set(dx, 0.1, dz);
-                        group.add(leg);
-                    }
                 }
                 break;
             }
@@ -906,35 +926,42 @@ export class Renderer3D {
                 body.position.y = flyH;
                 body.castShadow = true;
                 group.add(body);
-                // Beak
-                const beakMat = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
-                const beak = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.05, 4), beakMat);
+                const beak = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.05, 4),
+                    new THREE.MeshStandardMaterial({ color: 0xffaa00 }));
                 beak.position.set(0, flyH, -0.07);
                 beak.rotation.x = Math.PI / 2;
                 group.add(beak);
-                // Wings
+                // Animated wings
                 const wingMat = new THREE.MeshStandardMaterial({
                     color: color.clone().multiplyScalar(0.8), side: THREE.DoubleSide });
-                for (const dx of [-1, 1]) {
-                    const wing = new THREE.Mesh(
-                        new THREE.PlaneGeometry(0.15, 0.04), wingMat);
-                    wing.position.set(dx * 0.08, flyH, 0);
-                    wing.rotation.z = dx * 0.3;
-                    group.add(wing);
-                }
+                const leftWing = new THREE.Group();
+                leftWing.position.set(-0.06, flyH, 0);
+                const lw = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 0.04), wingMat);
+                lw.position.x = -0.07;
+                leftWing.add(lw);
+                group.add(leftWing);
+                const rightWing = new THREE.Group();
+                rightWing.position.set(0.06, flyH, 0);
+                const rw = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 0.04), wingMat);
+                rw.position.x = 0.07;
+                rightWing.add(rw);
+                group.add(rightWing);
+                group.userData.limbs = { leftWing, rightWing, type: 'bird', flyH };
                 break;
             }
             case 'FISH': {
-                const body = new THREE.Mesh(
-                    new THREE.CapsuleGeometry(0.06, 0.12, 4, 6), mat);
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.12, 4, 6), mat);
                 body.position.y = -0.3;
                 body.rotation.z = Math.PI / 2;
                 group.add(body);
-                // Tail fin
-                const tailMat = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.8), side: THREE.DoubleSide });
-                const tail = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.06), tailMat);
-                tail.position.set(0, -0.3, 0.12);
-                group.add(tail);
+                const tailPivot = new THREE.Group();
+                tailPivot.position.set(0, -0.3, 0.1);
+                const tailMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.06),
+                    new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.8), side: THREE.DoubleSide }));
+                tailMesh.position.z = 0.03;
+                tailPivot.add(tailMesh);
+                group.add(tailPivot);
+                group.userData.limbs = { tail: tailPivot, type: 'fish' };
                 break;
             }
             default: {
@@ -994,17 +1021,24 @@ export class Renderer3D {
                 tail.position.set(0, s * 0.7, s * 0.9);
                 tail.rotation.x = -0.6;
                 group.add(tail);
-                // Strong legs
-                for (const dx of [-s * 0.2, s * 0.2]) {
+                // Strong legs (animated pivots)
+                { const legs = {};
+                for (const [name, dx] of [['left', -s * 0.2], ['right', s * 0.2]]) {
+                    const pivot = new THREE.Group();
+                    pivot.position.set(dx, s * 0.8, 0);
                     const thigh = new THREE.Mesh(
                         new THREE.CapsuleGeometry(s * 0.12, s * 0.3, 4, 6), mat);
-                    thigh.position.set(dx, s * 0.6, 0);
-                    group.add(thigh);
+                    thigh.position.y = -s * 0.25;
+                    thigh.castShadow = true;
+                    pivot.add(thigh);
                     const foot = new THREE.Mesh(
                         new THREE.BoxGeometry(s * 0.18, s * 0.06, s * 0.22), mat);
-                    foot.position.set(dx, s * 0.03, -s * 0.05);
-                    group.add(foot);
+                    foot.position.set(0, -s * 0.5, -s * 0.05);
+                    pivot.add(foot);
+                    group.add(pivot);
+                    legs[name] = pivot;
                 }
+                group.userData.limbs = { ...legs, type: 'biped', scale: s }; }
                 break;
             }
             case 'BRONTO': {
@@ -1027,15 +1061,22 @@ export class Renderer3D {
                 const head = new THREE.Mesh(new THREE.SphereGeometry(s * 0.12, 6, 4), mat);
                 head.position.set(0, s * 2.9, -s * 1.1);
                 group.add(head);
-                // Thick legs
-                for (const dx of [-s * 0.35, s * 0.35]) {
-                    for (const dz of [-s * 0.2, s * 0.2]) {
-                        const leg = new THREE.Mesh(
-                            new THREE.CylinderGeometry(s * 0.12, s * 0.14, s * 0.8, 6), mat);
-                        leg.position.set(dx, s * 0.4, dz);
-                        group.add(leg);
-                    }
+                // Thick legs (animated)
+                { const legs = {};
+                const legPositions = [['fl', -s*0.35, s*0.8, -s*0.2], ['fr', s*0.35, s*0.8, -s*0.2],
+                                      ['bl', -s*0.35, s*0.8, s*0.2], ['br', s*0.35, s*0.8, s*0.2]];
+                for (const [name, x, y, z] of legPositions) {
+                    const pivot = new THREE.Group();
+                    pivot.position.set(x, y, z);
+                    const legM = new THREE.Mesh(
+                        new THREE.CylinderGeometry(s * 0.12, s * 0.14, s * 0.8, 6), mat);
+                    legM.position.y = -s * 0.4;
+                    legM.castShadow = true;
+                    pivot.add(legM);
+                    group.add(pivot);
+                    legs[name] = pivot;
                 }
+                group.userData.limbs = { ...legs, type: 'quadruped' }; }
                 // Long tail
                 const tail = new THREE.Mesh(new THREE.ConeGeometry(s * 0.15, s * 1.5, 5), mat);
                 tail.position.set(0, s * 0.8, s * 0.9);
@@ -1074,15 +1115,21 @@ export class Renderer3D {
                     horn.rotation.z = dx * -0.2;
                     group.add(horn);
                 }
-                // Legs
-                for (const dx of [-s * 0.25, s * 0.25]) {
-                    for (const dz of [-s * 0.15, s * 0.15]) {
-                        const leg = new THREE.Mesh(
-                            new THREE.CylinderGeometry(s * 0.08, s * 0.09, s * 0.5, 5), mat);
-                        leg.position.set(dx, s * 0.25, dz);
-                        group.add(leg);
-                    }
+                // Legs (animated)
+                { const legs = {};
+                const lp = [['fl', -s*0.25, s*0.5, -s*0.15], ['fr', s*0.25, s*0.5, -s*0.15],
+                             ['bl', -s*0.25, s*0.5, s*0.15], ['br', s*0.25, s*0.5, s*0.15]];
+                for (const [name, x, y, z] of lp) {
+                    const pivot = new THREE.Group();
+                    pivot.position.set(x, y, z);
+                    const legM = new THREE.Mesh(
+                        new THREE.CylinderGeometry(s * 0.08, s * 0.09, s * 0.5, 5), mat);
+                    legM.position.y = -s * 0.25;
+                    pivot.add(legM);
+                    group.add(pivot);
+                    legs[name] = pivot;
                 }
+                group.userData.limbs = { ...legs, type: 'quadruped' }; }
                 break;
             }
             case 'RAPTOR': {
@@ -1117,13 +1164,20 @@ export class Renderer3D {
                 tail.position.set(0, s * 0.5, s * 0.5);
                 tail.rotation.x = -0.7;
                 group.add(tail);
-                // Strong legs
-                for (const dx of [-s * 0.12, s * 0.12]) {
-                    const leg = new THREE.Mesh(
+                // Strong legs (animated)
+                { const legs = {};
+                for (const [name, dx] of [['left', -s * 0.12], ['right', s * 0.12]]) {
+                    const pivot = new THREE.Group();
+                    pivot.position.set(dx, s * 0.55, 0);
+                    const legM = new THREE.Mesh(
                         new THREE.CapsuleGeometry(s * 0.06, s * 0.25, 3, 5), mat);
-                    leg.position.set(dx, s * 0.3, 0);
-                    group.add(leg);
+                    legM.position.y = -s * 0.18;
+                    legM.castShadow = true;
+                    pivot.add(legM);
+                    group.add(pivot);
+                    legs[name] = pivot;
                 }
+                group.userData.limbs = { ...legs, type: 'biped', scale: s }; }
                 break;
             }
             case 'PTERANODON': {
@@ -1139,17 +1193,24 @@ export class Renderer3D {
                 head.position.set(0, flyH + s * 0.05, -s * 0.2);
                 head.rotation.x = Math.PI / 2;
                 group.add(head);
-                // Wide wings
+                // Wide wings (animated pivots)
                 const wingMat = new THREE.MeshStandardMaterial({
                     color: color.clone().multiplyScalar(0.85), side: THREE.DoubleSide, roughness: 0.8 });
-                for (const dx of [-1, 1]) {
-                    const wing = new THREE.Mesh(
-                        new THREE.PlaneGeometry(s * 1.2, s * 0.35), wingMat);
-                    wing.position.set(dx * s * 0.65, flyH, 0);
-                    wing.rotation.z = dx * 0.15;
-                    wing.castShadow = true;
-                    group.add(wing);
-                }
+                const leftWing = new THREE.Group();
+                leftWing.position.set(-s * 0.12, flyH, 0);
+                const lwMesh = new THREE.Mesh(new THREE.PlaneGeometry(s * 1.2, s * 0.35), wingMat);
+                lwMesh.position.x = -s * 0.55;
+                lwMesh.castShadow = true;
+                leftWing.add(lwMesh);
+                group.add(leftWing);
+                const rightWing = new THREE.Group();
+                rightWing.position.set(s * 0.12, flyH, 0);
+                const rwMesh = new THREE.Mesh(new THREE.PlaneGeometry(s * 1.2, s * 0.35), wingMat);
+                rwMesh.position.x = s * 0.55;
+                rwMesh.castShadow = true;
+                rightWing.add(rwMesh);
+                group.add(rightWing);
+                group.userData.limbs = { leftWing, rightWing, type: 'flying', flyH };
                 break;
             }
             case 'STEGO': {
@@ -1183,15 +1244,21 @@ export class Renderer3D {
                         group.add(spike);
                     }
                 }
-                // Legs
-                for (const dx of [-s * 0.2, s * 0.2]) {
-                    for (const dz of [-s * 0.12, s * 0.12]) {
-                        const leg = new THREE.Mesh(
-                            new THREE.CylinderGeometry(s * 0.08, s * 0.1, s * 0.5, 5), mat);
-                        leg.position.set(dx, s * 0.25, dz);
-                        group.add(leg);
-                    }
+                // Legs (animated)
+                { const legs = {};
+                const lp = [['fl', -s*0.2, s*0.5, -s*0.12], ['fr', s*0.2, s*0.5, -s*0.12],
+                             ['bl', -s*0.2, s*0.5, s*0.12], ['br', s*0.2, s*0.5, s*0.12]];
+                for (const [name, x, y, z] of lp) {
+                    const pivot = new THREE.Group();
+                    pivot.position.set(x, y, z);
+                    const legM = new THREE.Mesh(
+                        new THREE.CylinderGeometry(s * 0.08, s * 0.1, s * 0.5, 5), mat);
+                    legM.position.y = -s * 0.25;
+                    pivot.add(legM);
+                    group.add(pivot);
+                    legs[name] = pivot;
                 }
+                group.userData.limbs = { ...legs, type: 'quadruped' }; }
                 break;
             }
             default: {
@@ -1250,33 +1317,53 @@ export class Renderer3D {
             group.add(eye);
         }
 
-        // Huge arms
-        for (const dx of [-1, 1]) {
-            const arm = new THREE.Mesh(
-                new THREE.CapsuleGeometry(s * 0.1, s * 0.55, 3, 6), mat);
-            arm.position.set(dx * s * 0.42, s * 1.05, 0);
-            arm.rotation.z = dx * 0.25;
-            arm.castShadow = true;
-            group.add(arm);
-            // Fists
-            const fist = new THREE.Mesh(new THREE.SphereGeometry(s * 0.1, 5, 4), headMat);
-            fist.position.set(dx * s * 0.5, s * 0.5, 0);
-            group.add(fist);
-        }
+        // Huge arms (animated pivots)
+        const leftArm = new THREE.Group();
+        leftArm.position.set(-s * 0.42, s * 1.4, 0);
+        const laMesh = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.1, s * 0.55, 3, 6), mat);
+        laMesh.position.y = -s * 0.3;
+        laMesh.castShadow = true;
+        leftArm.add(laMesh);
+        const lFist = new THREE.Mesh(new THREE.SphereGeometry(s * 0.1, 5, 4), headMat);
+        lFist.position.y = -s * 0.6;
+        leftArm.add(lFist);
+        group.add(leftArm);
 
-        // Thick legs
-        for (const dx of [-1, 1]) {
-            const leg = new THREE.Mesh(
-                new THREE.CapsuleGeometry(s * 0.14, s * 0.45, 3, 6), mat);
-            leg.position.set(dx * s * 0.18, s * 0.35, 0);
-            leg.castShadow = true;
-            group.add(leg);
-            // Feet
-            const foot = new THREE.Mesh(
-                new THREE.BoxGeometry(s * 0.2, s * 0.06, s * 0.25), mat);
-            foot.position.set(dx * s * 0.18, s * 0.03, -s * 0.05);
-            group.add(foot);
-        }
+        const rightArm = new THREE.Group();
+        rightArm.position.set(s * 0.42, s * 1.4, 0);
+        const raMesh = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.1, s * 0.55, 3, 6), mat);
+        raMesh.position.y = -s * 0.3;
+        raMesh.castShadow = true;
+        rightArm.add(raMesh);
+        const rFist = new THREE.Mesh(new THREE.SphereGeometry(s * 0.1, 5, 4), headMat);
+        rFist.position.y = -s * 0.6;
+        rightArm.add(rFist);
+        group.add(rightArm);
+
+        // Thick legs (animated pivots)
+        const leftLeg = new THREE.Group();
+        leftLeg.position.set(-s * 0.18, s * 0.6, 0);
+        const llMesh = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.14, s * 0.45, 3, 6), mat);
+        llMesh.position.y = -s * 0.3;
+        llMesh.castShadow = true;
+        leftLeg.add(llMesh);
+        const lFoot = new THREE.Mesh(new THREE.BoxGeometry(s * 0.2, s * 0.06, s * 0.25), mat);
+        lFoot.position.set(0, -s * 0.55, -s * 0.05);
+        leftLeg.add(lFoot);
+        group.add(leftLeg);
+
+        const rightLeg = new THREE.Group();
+        rightLeg.position.set(s * 0.18, s * 0.6, 0);
+        const rlMesh = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.14, s * 0.45, 3, 6), mat);
+        rlMesh.position.y = -s * 0.3;
+        rlMesh.castShadow = true;
+        rightLeg.add(rlMesh);
+        const rFoot = new THREE.Mesh(new THREE.BoxGeometry(s * 0.2, s * 0.06, s * 0.25), mat);
+        rFoot.position.set(0, -s * 0.55, -s * 0.05);
+        rightLeg.add(rFoot);
+        group.add(rightLeg);
+
+        group.userData.limbs = { leftArm, rightArm, leftLeg, rightLeg, scale: s };
 
         // Loincloth / belt
         const clothMat = new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.9 });
@@ -1641,15 +1728,47 @@ export class Renderer3D {
                 }
             }
 
-            // Animation: bobbing while walking
-            if (person.state === NPC_STATE.WALKING || person.state === NPC_STATE.FLEEING) {
-                mesh.position.y += Math.abs(Math.sin(this.frame * 0.15)) * 0.06;
+            const limbs = mesh.userData.limbs;
+            const isWalking = person.state === NPC_STATE.WALKING || person.state === NPC_STATE.FLEEING;
+            const isWorking = person.state === NPC_STATE.WORKING || person.state === NPC_STATE.BUILDING;
+
+            if (limbs) {
+                if (isWalking) {
+                    // Walk cycle: swing legs and arms
+                    const speed = person.state === NPC_STATE.FLEEING ? 0.25 : 0.15;
+                    const t = this.frame * speed + (person.x * 7); // phase offset per person
+                    const swing = Math.sin(t) * 0.7;
+                    limbs.leftLeg.rotation.x = swing;
+                    limbs.rightLeg.rotation.x = -swing;
+                    limbs.leftArm.rotation.x = -swing * 0.5;
+                    limbs.rightArm.rotation.x = swing * 0.5;
+                    // Slight body bob
+                    mesh.position.y += Math.abs(Math.sin(t * 2)) * 0.03;
+                } else if (isWorking) {
+                    // Working animation: arms moving
+                    const t = this.frame * 0.12;
+                    limbs.leftArm.rotation.x = Math.sin(t) * 0.8;
+                    limbs.rightArm.rotation.x = Math.sin(t + Math.PI) * 0.8;
+                    limbs.leftLeg.rotation.x = 0;
+                    limbs.rightLeg.rotation.x = 0;
+                } else if (person.state === NPC_STATE.SLEEPING) {
+                    mesh.rotation.z = Math.PI / 2;
+                    mesh.position.y += 0.08;
+                    limbs.leftLeg.rotation.x = 0.3;
+                    limbs.rightLeg.rotation.x = 0.3;
+                    limbs.leftArm.rotation.x = 0.3;
+                    limbs.rightArm.rotation.x = 0.3;
+                } else {
+                    // Idle: gentle breathing/sway
+                    const t = this.frame * 0.04 + person.x;
+                    limbs.leftArm.rotation.x = Math.sin(t) * 0.05;
+                    limbs.rightArm.rotation.x = Math.sin(t + 0.5) * 0.05;
+                    limbs.leftLeg.rotation.x = 0;
+                    limbs.rightLeg.rotation.x = 0;
+                }
             }
-            // Sleeping: lay down
-            if (person.state === NPC_STATE.SLEEPING) {
-                mesh.rotation.z = Math.PI / 2;
-                mesh.position.y += 0.1;
-            } else {
+
+            if (person.state !== NPC_STATE.SLEEPING) {
                 mesh.rotation.z = 0;
             }
         }
@@ -1692,12 +1811,43 @@ export class Renderer3D {
             }
             const h = this.getTerrainHeight(animal.x, animal.y);
             mesh.position.set(animal.x, Math.max(animal.type === 'FISH' ? -0.8 : 0, h), animal.y);
+
             // Face direction
+            let isMoving = false;
             if (animal.prevX !== undefined) {
                 const dx = animal.x - animal.prevX;
                 const dz = animal.y - animal.prevY;
                 if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
                     mesh.rotation.y = Math.atan2(dx, dz);
+                    isMoving = true;
+                }
+            }
+
+            // Animate limbs
+            const limbs = mesh.userData.limbs;
+            if (limbs) {
+                const t = this.frame * 0.18 + animal.x * 5;
+                if (limbs.type === 'quadruped') {
+                    const swing = isMoving ? Math.sin(t) * 0.5 : Math.sin(this.frame * 0.03) * 0.03;
+                    if (limbs.fl) limbs.fl.rotation.x = swing;
+                    if (limbs.br) limbs.br.rotation.x = swing;
+                    if (limbs.fr) limbs.fr.rotation.x = -swing;
+                    if (limbs.bl) limbs.bl.rotation.x = -swing;
+                } else if (limbs.type === 'bird') {
+                    // Wing flapping
+                    const flap = Math.sin(this.frame * 0.3 + animal.x) * 0.6;
+                    if (limbs.leftWing) limbs.leftWing.rotation.z = flap;
+                    if (limbs.rightWing) limbs.rightWing.rotation.z = -flap;
+                } else if (limbs.type === 'fish') {
+                    // Tail wag
+                    if (limbs.tail) limbs.tail.rotation.y = Math.sin(this.frame * 0.2) * 0.4;
+                } else if (limbs.type === 'rabbit') {
+                    if (isMoving && limbs.bl) {
+                        const hop = Math.abs(Math.sin(t * 1.5)) * 0.6;
+                        limbs.bl.rotation.x = -hop;
+                        if (limbs.br) limbs.br.rotation.x = -hop;
+                        mesh.position.y += Math.abs(Math.sin(t * 1.5)) * 0.06;
+                    }
                 }
             }
         }
@@ -1721,6 +1871,39 @@ export class Renderer3D {
             }
             const h = this.getTerrainHeight(giant.x, giant.y);
             mesh.position.set(giant.x, Math.max(0, h), giant.y);
+
+            // Face direction + detect movement
+            let isMoving = false;
+            if (giant.prevX !== undefined) {
+                const dx = giant.x - giant.prevX;
+                const dz = giant.y - giant.prevY;
+                if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
+                    mesh.rotation.y = Math.atan2(dx, dz);
+                    isMoving = true;
+                }
+            }
+
+            // Animate giant limbs (slow, heavy walk)
+            const limbs = mesh.userData.limbs;
+            if (limbs) {
+                const t = this.frame * 0.08 + giant.x;
+                if (isMoving) {
+                    const swing = Math.sin(t) * 0.35;
+                    limbs.leftLeg.rotation.x = swing;
+                    limbs.rightLeg.rotation.x = -swing;
+                    limbs.leftArm.rotation.x = -swing * 0.4;
+                    limbs.rightArm.rotation.x = swing * 0.4;
+                    // Heavy ground shake bob
+                    mesh.position.y += Math.abs(Math.sin(t * 2)) * 0.05;
+                } else {
+                    // Idle heavy breathing
+                    const b = Math.sin(this.frame * 0.03) * 0.03;
+                    limbs.leftArm.rotation.x = b;
+                    limbs.rightArm.rotation.x = b;
+                    limbs.leftLeg.rotation.x = 0;
+                    limbs.rightLeg.rotation.x = 0;
+                }
+            }
         }
     }
 
@@ -1743,11 +1926,38 @@ export class Renderer3D {
             }
             const h = this.getTerrainHeight(dino.x, dino.y);
             mesh.position.set(dino.x, Math.max(0, h), dino.y);
+
+            let isMoving = false;
             if (dino.prevX !== undefined) {
                 const dx = dino.x - dino.prevX;
                 const dz = dino.y - dino.prevY;
                 if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
                     mesh.rotation.y = Math.atan2(dx, dz);
+                    isMoving = true;
+                }
+            }
+
+            // Animate limbs
+            const limbs = mesh.userData.limbs;
+            if (limbs) {
+                const t = this.frame * 0.12 + dino.x * 3;
+                if (limbs.type === 'quadruped') {
+                    const swing = isMoving ? Math.sin(t) * 0.4 : Math.sin(this.frame * 0.02) * 0.02;
+                    if (limbs.fl) limbs.fl.rotation.x = swing;
+                    if (limbs.br) limbs.br.rotation.x = swing;
+                    if (limbs.fr) limbs.fr.rotation.x = -swing;
+                    if (limbs.bl) limbs.bl.rotation.x = -swing;
+                } else if (limbs.type === 'biped') {
+                    const swing = isMoving ? Math.sin(t) * 0.5 : Math.sin(this.frame * 0.02) * 0.02;
+                    if (limbs.left) limbs.left.rotation.x = swing;
+                    if (limbs.right) limbs.right.rotation.x = -swing;
+                    if (isMoving) mesh.position.y += Math.abs(Math.sin(t * 2)) * 0.04;
+                } else if (limbs.type === 'flying') {
+                    const flap = Math.sin(this.frame * 0.15 + dino.x) * 0.5;
+                    if (limbs.leftWing) limbs.leftWing.rotation.z = flap;
+                    if (limbs.rightWing) limbs.rightWing.rotation.z = -flap;
+                    // Gentle hover bob
+                    mesh.position.y += Math.sin(this.frame * 0.05) * 0.15;
                 }
             }
         }

@@ -80,9 +80,11 @@ export class Camera3D {
                 this.dragTargetX = this.targetX;
                 this.dragTargetZ = this.targetZ;
             } else if (e.button === 1) {
-                // Middle-click: tilt angle
+                // Middle-click: orbit + tilt
                 this.tilting = true;
+                this.dragStartX = e.clientX;
                 this.dragStartY = e.clientY;
+                this.dragOrbitAngle = this.orbitAngle;
                 this.dragTiltAngle = this.tiltAngle;
                 e.preventDefault();
             } else if (e.button === 2) {
@@ -104,7 +106,9 @@ export class Camera3D {
                 this.clamp();
             }
             if (this.tilting) {
+                const dx = (e.clientX - this.dragStartX) * 0.005;
                 const dy = (e.clientY - this.dragStartY) * 0.005;
+                this.orbitAngle = this.dragOrbitAngle + dx;
                 this.tiltAngle = Math.max(0.15, Math.min(Math.PI / 2.1, this.dragTiltAngle + dy));
             }
             if (this.rotating) {
