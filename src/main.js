@@ -81,6 +81,17 @@ function showTitleScreen() {
         if (!started) requestAnimationFrame(drawTitle);
     }
 
+    function showError(message) {
+        let el = document.getElementById('game-error-overlay');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'game-error-overlay';
+            el.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);color:#ff4444;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;font-family:monospace;padding:20px;';
+            document.body.appendChild(el);
+        }
+        el.innerHTML = `<div style="font-size:20px;margin-bottom:15px;">⚠ 초기화 오류 / Init Error</div><pre style="color:#ffaaaa;font-size:14px;white-space:pre-wrap;max-width:80%;text-align:center;">${message}</pre><div style="color:#888;font-size:12px;margin-top:15px;">F12 → Console 에서 상세 에러 확인</div>`;
+    }
+
     function startGame(ambient) {
         if (started) return;
         started = true;
@@ -89,16 +100,25 @@ function showTitleScreen() {
         document.getElementById('minimap-container').style.display = '';
         document.getElementById('placement-panel').style.display = '';
 
-        const game = new Game(canvas);
-        game.sound.init();
-        game.sound.resume();
-        game.init();
+        try {
+            console.log('[Start] Creating Game...');
+            const game = new Game(canvas);
+            console.log('[Start] Game created, init sound...');
+            game.sound.init();
+            game.sound.resume();
+            console.log('[Start] Starting game.init()...');
+            game.init();
+            console.log('[Start] Game initialized successfully');
 
-        if (ambient) {
-            setTimeout(() => game.ambientMode.toggle(), 500);
+            if (ambient) {
+                setTimeout(() => game.ambientMode.toggle(), 500);
+            }
+
+            window.game = game;
+        } catch (err) {
+            console.error('Game initialization failed:', err);
+            showError(`${err.message || err}\n\n${err.stack || ''}`);
         }
-
-        window.game = game;
     }
 
     canvas.addEventListener('click', () => startGame(false), { once: true });
@@ -125,20 +145,24 @@ window.addEventListener('DOMContentLoaded', () => {
         document.getElementById('minimap-container').style.display = 'none';
         document.getElementById('placement-panel').style.display = 'none';
 
-        const game = new Game(canvas);
-        game.sound.init();
-        game.init();
-        setTimeout(() => game.ambientMode.toggle(), 300);
-        window.game = game;
+        try {
+            const game = new Game(canvas);
+            game.sound.init();
+            game.init();
+            setTimeout(() => game.ambientMode.toggle(), 300);
+            window.game = game;
 
-        const enableAudio = () => {
-            game.sound.resume();
-            if (game.sound.startBGM) game.sound.startBGM();
-            document.removeEventListener('click', enableAudio);
-            document.removeEventListener('touchstart', enableAudio);
-        };
-        document.addEventListener('click', enableAudio);
-        document.addEventListener('touchstart', enableAudio);
+            const enableAudio = () => {
+                game.sound.resume();
+                if (game.sound.startBGM) game.sound.startBGM();
+                document.removeEventListener('click', enableAudio);
+                document.removeEventListener('touchstart', enableAudio);
+            };
+            document.addEventListener('click', enableAudio);
+            document.addEventListener('touchstart', enableAudio);
+        } catch (err) {
+            console.error('Ambient mode init failed:', err);
+        }
     } else {
         showTitleScreen();
     }

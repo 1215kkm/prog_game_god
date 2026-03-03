@@ -121,6 +121,11 @@ export class Renderer3D {
         this.buildInitialTrees();
         this.buildWeatherSystems();
 
+        // Safety render so user sees terrain immediately (not black screen)
+        if (this.game.camera3d && this.game.camera3d.threeCamera) {
+            this.threeRenderer.render(this.scene, this.game.camera3d.threeCamera);
+        }
+
         window.addEventListener('resize', () => this.onResize());
     }
 
@@ -2044,7 +2049,12 @@ export class Renderer3D {
             if (!person.alive) continue;
             let mesh = this.personMeshes.get(person);
             if (!mesh) {
-                mesh = this.createPersonMesh(person);
+                try {
+                    mesh = this.createPersonMesh(person);
+                } catch (err) {
+                    console.warn('Failed to create person mesh:', err);
+                    continue;
+                }
                 this.entityGroup.add(mesh);
                 this.personMeshes.set(person, mesh);
             }
@@ -2116,7 +2126,13 @@ export class Renderer3D {
         }
         for (const building of buildings) {
             if (this.buildingMeshes.has(building)) continue;
-            const mesh = this.createBuildingMesh(building);
+            let mesh;
+            try {
+                mesh = this.createBuildingMesh(building);
+            } catch (err) {
+                console.warn('Failed to create building mesh:', err);
+                continue;
+            }
             if (mesh) {
                 this.buildingGroup.add(mesh);
                 this.buildingMeshes.set(building, mesh);
@@ -2136,7 +2152,12 @@ export class Renderer3D {
             if (!animal.alive) continue;
             let mesh = this.animalMeshes.get(animal);
             if (!mesh) {
-                mesh = this.createAnimalMesh(animal);
+                try {
+                    mesh = this.createAnimalMesh(animal);
+                } catch (err) {
+                    console.warn('Failed to create animal mesh:', err);
+                    continue;
+                }
                 if (!mesh) continue;
                 this.entityGroup.add(mesh);
                 this.animalMeshes.set(animal, mesh);
@@ -2197,7 +2218,12 @@ export class Renderer3D {
             if (!giant.alive) continue;
             let mesh = this.giantMeshes.get(giant);
             if (!mesh) {
-                mesh = this.createGiantMesh(giant);
+                try {
+                    mesh = this.createGiantMesh(giant);
+                } catch (err) {
+                    console.warn('Failed to create giant mesh:', err);
+                    continue;
+                }
                 this.entityGroup.add(mesh);
                 this.giantMeshes.set(giant, mesh);
             }
@@ -2251,7 +2277,12 @@ export class Renderer3D {
             if (!dino.alive) continue;
             let mesh = this.dinoMeshes.get(dino);
             if (!mesh) {
-                mesh = this.createDinoMesh(dino);
+                try {
+                    mesh = this.createDinoMesh(dino);
+                } catch (err) {
+                    console.warn('Failed to create dino mesh:', err);
+                    continue;
+                }
                 if (!mesh) continue;
                 this.entityGroup.add(mesh);
                 this.dinoMeshes.set(dino, mesh);
@@ -2307,7 +2338,12 @@ export class Renderer3D {
             if (!vehicle.alive) continue;
             let mesh = this.vehicleMeshes.get(vehicle);
             if (!mesh) {
-                mesh = this.createVehicleMesh(vehicle);
+                try {
+                    mesh = this.createVehicleMesh(vehicle);
+                } catch (err) {
+                    console.warn('Failed to create vehicle mesh:', err);
+                    continue;
+                }
                 if (!mesh) continue;
                 this.vehicleGroup.add(mesh);
                 this.vehicleMeshes.set(vehicle, mesh);

@@ -73,19 +73,28 @@ export class Game {
     }
 
     init() {
-        this.world.generate();
+        const steps = [
+            ['World generation', () => this.world.generate()],
+            ['3D renderer init', () => this.renderer.init()],
+            ['Camera controls', () => this.camera3d.setupControls()],
+            ['Spawn entities', () => this.entityManager.spawnInitialEntities()],
+            ['Minimap init', () => this.minimap.init()],
+            ['UI init', () => this.ui.init()],
+            ['Placement system', () => this.placementSystem.init()],
+            ['Ambient mode', () => this.ambientMode.init()],
+        ];
 
-        // Init 3D renderer (creates WebGL canvas)
-        this.renderer.init();
-
-        // Setup camera controls (needs canvas3d from renderer)
-        this.camera3d.setupControls();
-
-        this.entityManager.spawnInitialEntities();
-        this.minimap.init();
-        this.ui.init();
-        this.placementSystem.init();
-        this.ambientMode.init();
+        for (const [name, fn] of steps) {
+            try {
+                console.log(`[Init] ${name}...`);
+                fn();
+                console.log(`[Init] ${name} ✓`);
+            } catch (err) {
+                console.error(`[Init] ${name} FAILED:`, err);
+                this._showError(`Init failed at: ${name}\n${err.message || err}`);
+                return; // Stop further initialization
+            }
+        }
 
         this.camera3d.centerOn(
             this.world.spawnPoint.x,
@@ -98,26 +107,47 @@ export class Game {
         this.loop(this.lastTime);
     }
 
+    _showError(message) {
+        console.error('[Game Error]', message);
+        // Show error as HTML overlay (visible even after canvas swap)
+        let el = document.getElementById('game-error-overlay');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'game-error-overlay';
+            el.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);color:#ff4444;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;font-family:monospace;padding:20px;';
+            document.body.appendChild(el);
+        }
+        el.innerHTML = `<div style="font-size:20px;margin-bottom:15px;">⚠ 오류 / Error</div><pre style="color:#ffaaaa;font-size:14px;white-space:pre-wrap;max-width:80%;text-align:center;">${message}</pre><div style="color:#888;font-size:12px;margin-top:15px;">F12 → Console 에서 상세 에러 확인</div>`;
+    }
+
     loop(timestamp) {
         const delta = timestamp - this.lastTime;
         this.lastTime = timestamp;
 
-        if (this.running) {
-            this.accumulator += delta * this.speed;
+        try {
+            if (this.running) {
+                this.accumulator += delta * this.speed;
 
-            // Dynamic cap based on speed
-            const maxTicks = this.speed >= 50 ? 100 : this.speed >= 10 ? 30 : 10;
-            if (this.accumulator > this.tickRate * maxTicks) {
-                this.accumulator = this.tickRate * maxTicks;
+                // Dynamic cap based on speed
+                const maxTicks = this.speed >= 50 ? 100 : this.speed >= 10 ? 30 : 10;
+                if (this.accumulator > this.tickRate * maxTicks) {
+                    this.accumulator = this.tickRate * maxTicks;
+                }
+
+                while (this.accumulator >= this.tickRate) {
+                    this.update();
+                    this.accumulator -= this.tickRate;
+                }
             }
 
-            while (this.accumulator >= this.tickRate) {
-                this.update();
-                this.accumulator -= this.tickRate;
+            this.render();
+        } catch (err) {
+            if (!this._errorLogged) {
+                console.error('Game loop error:', err);
+                this._showError(`Game loop error:\n${err.message || err}\n\n${err.stack || ''}`);
+                this._errorLogged = true;
             }
         }
-
-        this.render();
         requestAnimationFrame((t) => this.loop(t));
     }
 
