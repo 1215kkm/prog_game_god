@@ -1,4 +1,4 @@
-import { TERRAIN_COLORS, TILE_SIZE } from '../core/constants.js';
+import { TERRAIN_COLORS, WORLD_WIDTH, WORLD_HEIGHT } from '../core/constants.js';
 
 export class Minimap {
     constructor(game) {
@@ -24,7 +24,7 @@ export class Minimap {
             const my = e.clientY - rect.top;
             const tileX = mx / this.scale;
             const tileY = my / this.scale;
-            this.game.camera.centerOn(tileX, tileY);
+            this.game.camera3d.centerOn(tileX, tileY);
         };
 
         this.canvas.addEventListener('click', handleClick);
@@ -86,16 +86,23 @@ export class Minimap {
         ctx.fillStyle = '#fff';
         for (const p of this.game.entityManager.people) {
             if (!p.alive) continue;
-            ctx.fillRect(p.x * this.scale - 0.5, p.y * this.scale - 0.5, 1, 1);
+            ctx.fillRect(p.x * this.scale - 0.5, p.y * this.scale - 0.5, 1.5, 1.5);
         }
 
-        // Camera viewport
-        const cam = this.game.camera;
-        const canvas = this.game.canvas;
-        const vx = cam.x / TILE_SIZE * this.scale;
-        const vy = cam.y / TILE_SIZE * this.scale;
-        const vw = (canvas.width / cam.zoom) / TILE_SIZE * this.scale;
-        const vh = (canvas.height / cam.zoom) / TILE_SIZE * this.scale;
+        // Dinosaurs (as colored dots)
+        ctx.fillStyle = '#f80';
+        for (const d of (this.game.entityManager.dinosaurs || [])) {
+            if (!d.alive) continue;
+            ctx.fillRect(d.x * this.scale - 1, d.y * this.scale - 1, 2, 2);
+        }
+
+        // Camera viewport rectangle using 3D camera data
+        const cam = this.game.camera3d;
+        const range = cam.getVisibleTileRange();
+        const vx = Math.max(0, range.startX) * this.scale;
+        const vy = Math.max(0, range.startY) * this.scale;
+        const vw = (range.endX - range.startX) * this.scale;
+        const vh = (range.endY - range.startY) * this.scale;
 
         ctx.strokeStyle = 'rgba(255,255,255,0.8)';
         ctx.lineWidth = 1;

@@ -166,7 +166,8 @@ export class AmbientMode {
             game.running = true;
             game.setSpeed(2); // Slightly faster for ambient watching
             game.godPowers.activePower = null;
-            game.canvas.style.cursor = 'none';
+            const activeCanvas = game.canvas3d || game.canvas;
+            activeCanvas.style.cursor = 'none';
             this.showSubtitle('관상 모드');
 
             // Start ambient BGM
@@ -180,7 +181,8 @@ export class AmbientMode {
             this.overlay.style.display = 'none';
             game.cinematicCamera.enabled = false;
             game.setSpeed(1);
-            game.canvas.style.cursor = 'grab';
+            const activeCanvas = game.canvas3d || game.canvas;
+            activeCanvas.style.cursor = 'grab';
 
             // Stop ambient BGM
             if (game.sound) {

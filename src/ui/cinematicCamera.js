@@ -73,18 +73,16 @@ export class CinematicCamera {
                 break;
         }
 
-        // Smooth camera movement
-        const cam = this.game.camera;
-        const canvas = this.game.canvas;
+        // Smooth 3D camera movement
+        const cam = this.game.camera3d;
+        if (!cam) return;
 
-        // Convert target tile position to camera position
-        const desiredCamX = this.targetX * 24 - canvas.width / (2 * this.targetZoom);
-        const desiredCamY = this.targetY * 24 - canvas.height / (2 * this.targetZoom);
-
-        cam.x += (desiredCamX - cam.x) * this.lerpSpeed;
-        cam.y += (desiredCamY - cam.y) * this.lerpSpeed;
+        cam.targetX += (this.targetX - cam.targetX) * this.lerpSpeed;
+        cam.targetZ += (this.targetY - cam.targetZ) * this.lerpSpeed;
         cam.zoom += (this.targetZoom - cam.zoom) * this.zoomLerpSpeed;
+        cam.zoom = Math.max(cam.minZoom, Math.min(cam.maxZoom, cam.zoom));
         cam.clamp();
+        cam.updateProjection();
     }
 
     pickNextMode() {

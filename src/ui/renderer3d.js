@@ -672,37 +672,68 @@ export class Renderer3D {
         const pConfig = PERSONALITY[personality] || PERSONALITY.NORMAL;
         const bodyColor = new THREE.Color(pConfig.color);
         const isChild = person.age < 15;
-        const scale = isChild ? 0.6 : 1.0;
+        const s = isChild ? 0.55 : 0.85;
 
-        // Body (capsule)
+        // Body (torso)
         const bodyMat = new THREE.MeshStandardMaterial({
             color: bodyColor, roughness: 0.6, metalness: 0.05
         });
-        const bodyGeo = new THREE.CapsuleGeometry(0.08 * scale, 0.15 * scale, 4, 8);
+        const bodyGeo = new THREE.CapsuleGeometry(0.12 * s, 0.22 * s, 4, 8);
         const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 0.15 * scale;
+        body.position.y = 0.35 * s;
         body.castShadow = true;
         group.add(body);
 
         // Head
-        const skinColor = 0xf5d0a9;
+        const skinTone = person.gender === 'female' ? 0xf5c8a0 : 0xe8b888;
         const headMat = new THREE.MeshStandardMaterial({
-            color: skinColor, roughness: 0.7, metalness: 0
+            color: skinTone, roughness: 0.7, metalness: 0
         });
-        const headGeo = new THREE.SphereGeometry(0.06 * scale, 8, 6);
+        const headGeo = new THREE.SphereGeometry(0.1 * s, 8, 6);
         const head = new THREE.Mesh(headGeo, headMat);
-        head.position.y = 0.32 * scale;
+        head.position.y = 0.6 * s;
         head.castShadow = true;
         group.add(head);
 
-        // Criminal mark (red aura)
+        // Hair
+        const hairColors = [0x2a1a0a, 0x4a2a10, 0x1a0a00, 0x6a4420, 0x3a2010];
+        const hairColor = hairColors[Math.floor(Math.abs(person.name?.charCodeAt(0) || 0) % hairColors.length)];
+        const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.9 });
+        const hairGeo = new THREE.SphereGeometry(0.105 * s, 8, 4, 0, Math.PI * 2, 0, Math.PI * 0.6);
+        const hair = new THREE.Mesh(hairGeo, hairMat);
+        hair.position.y = 0.63 * s;
+        group.add(hair);
+
+        // Arms
+        for (const dx of [-1, 1]) {
+            const arm = new THREE.Mesh(
+                new THREE.CapsuleGeometry(0.035 * s, 0.18 * s, 3, 6), bodyMat);
+            arm.position.set(dx * 0.16 * s, 0.32 * s, 0);
+            arm.rotation.z = dx * 0.15;
+            arm.castShadow = true;
+            group.add(arm);
+        }
+
+        // Legs
+        const legMat = new THREE.MeshStandardMaterial({
+            color: bodyColor.clone().multiplyScalar(0.7), roughness: 0.7
+        });
+        for (const dx of [-1, 1]) {
+            const leg = new THREE.Mesh(
+                new THREE.CapsuleGeometry(0.04 * s, 0.16 * s, 3, 6), legMat);
+            leg.position.set(dx * 0.06 * s, 0.1 * s, 0);
+            leg.castShadow = true;
+            group.add(leg);
+        }
+
+        // Criminal mark (red aura ring on ground)
         if (personality === 'CRIMINAL') {
-            const auraGeo = new THREE.RingGeometry(0.12, 0.15, 16);
+            const auraGeo = new THREE.RingGeometry(0.2, 0.28, 16);
             const auraMat = new THREE.MeshBasicMaterial({
                 color: 0xff0000, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
             const aura = new THREE.Mesh(auraGeo, auraMat);
             aura.rotation.x = -Math.PI / 2;
-            aura.position.y = 0.01;
+            aura.position.y = 0.02;
             group.add(aura);
         }
 
@@ -711,9 +742,38 @@ export class Renderer3D {
             const crownMat = new THREE.MeshStandardMaterial({
                 color: 0xffd700, roughness: 0.3, metalness: 0.5 });
             const crown = new THREE.Mesh(
-                new THREE.ConeGeometry(0.05, 0.06, 5), crownMat);
-            crown.position.y = 0.4 * scale;
+                new THREE.ConeGeometry(0.07 * s, 0.1 * s, 5), crownMat);
+            crown.position.y = 0.75 * s;
             group.add(crown);
+        }
+
+        // Scholar hat
+        if (personality === 'SCHOLAR') {
+            const hatMat = new THREE.MeshStandardMaterial({ color: 0x222244, roughness: 0.6 });
+            const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.1 * s, 0.08 * s, 8), hatMat);
+            hat.position.y = 0.72 * s;
+            group.add(hat);
+            const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * s, 0.14 * s, 0.015 * s, 8), hatMat);
+            brim.position.y = 0.68 * s;
+            group.add(brim);
+        }
+
+        // Warrior shield
+        if (personality === 'WARRIOR') {
+            const shieldMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.4, metalness: 0.5 });
+            const shield = new THREE.Mesh(new THREE.CircleGeometry(0.1 * s, 6), shieldMat);
+            shield.position.set(-0.2 * s, 0.3 * s, 0);
+            shield.rotation.y = Math.PI / 2;
+            group.add(shield);
+        }
+
+        // Healer glow
+        if (personality === 'HEALER') {
+            const glowMat = new THREE.MeshBasicMaterial({
+                color: 0x44ff88, transparent: true, opacity: 0.3 });
+            const glow = new THREE.Mesh(new THREE.SphereGeometry(0.3 * s, 8, 6), glowMat);
+            glow.position.y = 0.35 * s;
+            group.add(glow);
         }
 
         return group;
@@ -733,77 +793,132 @@ export class Renderer3D {
 
         switch (type) {
             case 'RABBIT': {
-                const body = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mat);
-                body.position.y = 0.06;
-                body.scale.set(1, 0.8, 1.2);
+                const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), mat);
+                body.position.y = 0.12;
+                body.scale.set(1, 0.8, 1.3);
+                body.castShadow = true;
                 group.add(body);
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), mat);
+                head.position.set(0, 0.2, -0.1);
+                group.add(head);
                 // Ears
-                for (const dx of [-0.03, 0.03]) {
+                for (const dx of [-0.04, 0.04]) {
                     const ear = new THREE.Mesh(
-                        new THREE.CapsuleGeometry(0.01, 0.04, 2, 4), mat);
-                    ear.position.set(dx, 0.14, -0.02);
+                        new THREE.CapsuleGeometry(0.02, 0.1, 2, 4), mat);
+                    ear.position.set(dx, 0.32, -0.1);
                     group.add(ear);
                 }
+                // Tail
+                const tailMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+                const tail = new THREE.Mesh(new THREE.SphereGeometry(0.04, 4, 3), tailMat);
+                tail.position.set(0, 0.12, 0.14);
+                group.add(tail);
                 break;
             }
             case 'DEER': {
-                const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.12, 4, 8), mat);
-                body.position.y = 0.12;
+                // Body
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.25, 4, 8), mat);
+                body.position.y = 0.32;
                 body.rotation.z = Math.PI / 2;
+                body.castShadow = true;
                 group.add(body);
-                // Legs
-                for (const dx of [-0.06, 0.06]) {
-                    for (const dz of [-0.04, 0.04]) {
+                // Head
+                const headMat = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.9) });
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), headMat);
+                head.position.set(0, 0.4, -0.22);
+                group.add(head);
+                // Legs (4 legs)
+                for (const dx of [-0.1, 0.1]) {
+                    for (const dz of [-0.08, 0.08]) {
                         const leg = new THREE.Mesh(
-                            new THREE.CylinderGeometry(0.015, 0.015, 0.1, 4), mat);
-                        leg.position.set(dx, 0.05, dz);
+                            new THREE.CylinderGeometry(0.025, 0.02, 0.25, 4), mat);
+                        leg.position.set(dx, 0.12, dz);
                         group.add(leg);
                     }
                 }
                 // Antlers
                 const antlerMat = new THREE.MeshStandardMaterial({ color: 0x8B6914 });
-                for (const dx of [-0.03, 0.03]) {
+                for (const dx of [-0.05, 0.05]) {
                     const antler = new THREE.Mesh(
-                        new THREE.ConeGeometry(0.01, 0.08, 3), antlerMat);
-                    antler.position.set(dx, 0.22, -0.06);
+                        new THREE.ConeGeometry(0.02, 0.18, 3), antlerMat);
+                    antler.position.set(dx, 0.52, -0.2);
                     antler.rotation.z = dx > 0 ? -0.3 : 0.3;
                     group.add(antler);
                 }
                 break;
             }
             case 'WOLF': {
-                const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.12, 4, 8), mat);
-                body.position.y = 0.1;
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.22, 4, 8), mat);
+                body.position.y = 0.22;
                 body.rotation.z = Math.PI / 2;
+                body.castShadow = true;
                 group.add(body);
-                const head = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.08, 6), mat);
-                head.position.set(0, 0.12, -0.1);
+                const head = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.14, 6), mat);
+                head.position.set(0, 0.26, -0.2);
                 head.rotation.x = Math.PI / 2;
                 group.add(head);
+                // Legs
+                for (const dx of [-0.08, 0.08]) {
+                    for (const dz of [-0.06, 0.06]) {
+                        const leg = new THREE.Mesh(
+                            new THREE.CylinderGeometry(0.025, 0.02, 0.18, 4), mat);
+                        leg.position.set(dx, 0.09, dz);
+                        group.add(leg);
+                    }
+                }
+                // Tail
+                const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.12, 3, 4), mat);
+                tail.position.set(0, 0.2, 0.18);
+                tail.rotation.x = -0.8;
+                group.add(tail);
                 break;
             }
             case 'BEAR': {
-                const body = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), mat);
-                body.position.y = 0.1;
+                const body = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), mat);
+                body.position.y = 0.25;
                 body.scale.set(1.2, 0.9, 1);
                 body.castShadow = true;
                 group.add(body);
-                const head = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), mat);
-                head.position.set(0, 0.16, -0.08);
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), mat);
+                head.position.set(0, 0.38, -0.16);
+                head.castShadow = true;
                 group.add(head);
+                // Ears
+                for (const dx of [-0.08, 0.08]) {
+                    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.03, 4, 3), mat);
+                    ear.position.set(dx, 0.48, -0.14);
+                    group.add(ear);
+                }
+                // Legs
+                for (const dx of [-0.12, 0.12]) {
+                    for (const dz of [-0.06, 0.06]) {
+                        const leg = new THREE.Mesh(
+                            new THREE.CylinderGeometry(0.04, 0.04, 0.2, 5), mat);
+                        leg.position.set(dx, 0.1, dz);
+                        group.add(leg);
+                    }
+                }
                 break;
             }
             case 'BIRD': {
-                const body = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 4), mat);
-                body.position.y = 0.5 + Math.random() * 0.5;
+                const flyH = 1.5 + Math.random() * 2;
+                const body = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), mat);
+                body.position.y = flyH;
+                body.castShadow = true;
                 group.add(body);
+                // Beak
+                const beakMat = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
+                const beak = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.05, 4), beakMat);
+                beak.position.set(0, flyH, -0.07);
+                beak.rotation.x = Math.PI / 2;
+                group.add(beak);
                 // Wings
                 const wingMat = new THREE.MeshStandardMaterial({
-                    color: color.clone().multiplyScalar(0.8) });
+                    color: color.clone().multiplyScalar(0.8), side: THREE.DoubleSide });
                 for (const dx of [-1, 1]) {
                     const wing = new THREE.Mesh(
-                        new THREE.PlaneGeometry(0.06, 0.02), wingMat);
-                    wing.position.set(dx * 0.04, body.position.y, 0);
+                        new THREE.PlaneGeometry(0.15, 0.04), wingMat);
+                    wing.position.set(dx * 0.08, flyH, 0);
                     wing.rotation.z = dx * 0.3;
                     group.add(wing);
                 }
@@ -811,15 +926,21 @@ export class Renderer3D {
             }
             case 'FISH': {
                 const body = new THREE.Mesh(
-                    new THREE.CapsuleGeometry(0.03, 0.06, 4, 6), mat);
-                body.position.y = -0.5;
+                    new THREE.CapsuleGeometry(0.06, 0.12, 4, 6), mat);
+                body.position.y = -0.3;
                 body.rotation.z = Math.PI / 2;
                 group.add(body);
+                // Tail fin
+                const tailMat = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.8), side: THREE.DoubleSide });
+                const tail = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.06), tailMat);
+                tail.position.set(0, -0.3, 0.12);
+                group.add(tail);
                 break;
             }
             default: {
-                const body = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), mat);
-                body.position.y = 0.05;
+                const body = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 4), mat);
+                body.position.y = 0.1;
+                body.castShadow = true;
                 group.add(body);
             }
         }
@@ -833,63 +954,269 @@ export class Renderer3D {
 
         const color = new THREE.Color(config.color);
         const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.05 });
+        const bellyMat = new THREE.MeshStandardMaterial({ color: color.clone().lerp(new THREE.Color(0xffffff), 0.3), roughness: 0.8 });
         const group = new THREE.Group();
-        const s = config.size * 0.15;
+        const s = config.size * 0.35; // Much larger scale
 
         switch (dino.type) {
             case 'TREX': {
-                const body = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.4, s, 4, 8), mat);
-                body.position.y = s * 1.2;
+                // Massive body
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.4, s * 0.8, 4, 8), mat);
+                body.position.y = s * 1.1;
                 body.castShadow = true;
                 group.add(body);
-                const head = new THREE.Mesh(new THREE.BoxGeometry(s * 0.4, s * 0.35, s * 0.5), mat);
-                head.position.set(0, s * 1.8, -s * 0.5);
+                // Big head with jaw
+                const head = new THREE.Mesh(new THREE.BoxGeometry(s * 0.5, s * 0.4, s * 0.6), mat);
+                head.position.set(0, s * 1.7, -s * 0.6);
                 head.castShadow = true;
                 group.add(head);
+                // Lower jaw
+                const jaw = new THREE.Mesh(new THREE.BoxGeometry(s * 0.4, s * 0.15, s * 0.5), bellyMat);
+                jaw.position.set(0, s * 1.42, -s * 0.55);
+                group.add(jaw);
+                // Eyes
+                const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff4400, emissive: 0x440000 });
+                for (const dx of [-1, 1]) {
+                    const eye = new THREE.Mesh(new THREE.SphereGeometry(s * 0.05, 4, 3), eyeMat);
+                    eye.position.set(dx * s * 0.22, s * 1.8, -s * 0.85);
+                    group.add(eye);
+                }
+                // Tiny arms
+                for (const dx of [-1, 1]) {
+                    const arm = new THREE.Mesh(
+                        new THREE.CapsuleGeometry(s * 0.05, s * 0.15, 3, 4), mat);
+                    arm.position.set(dx * s * 0.3, s * 1.2, -s * 0.2);
+                    arm.rotation.z = dx * 0.5;
+                    group.add(arm);
+                }
                 // Tail
-                const tail = new THREE.Mesh(new THREE.ConeGeometry(s * 0.2, s * 1.2, 6), mat);
-                tail.position.set(0, s * 0.8, s * 0.8);
-                tail.rotation.x = -0.5;
+                const tail = new THREE.Mesh(new THREE.ConeGeometry(s * 0.25, s * 1.4, 6), mat);
+                tail.position.set(0, s * 0.7, s * 0.9);
+                tail.rotation.x = -0.6;
                 group.add(tail);
-                // Legs
+                // Strong legs
                 for (const dx of [-s * 0.2, s * 0.2]) {
-                    const leg = new THREE.Mesh(
-                        new THREE.CylinderGeometry(s * 0.1, s * 0.08, s * 0.8, 6), mat);
-                    leg.position.set(dx, s * 0.4, 0);
-                    group.add(leg);
+                    const thigh = new THREE.Mesh(
+                        new THREE.CapsuleGeometry(s * 0.12, s * 0.3, 4, 6), mat);
+                    thigh.position.set(dx, s * 0.6, 0);
+                    group.add(thigh);
+                    const foot = new THREE.Mesh(
+                        new THREE.BoxGeometry(s * 0.18, s * 0.06, s * 0.22), mat);
+                    foot.position.set(dx, s * 0.03, -s * 0.05);
+                    group.add(foot);
                 }
                 break;
             }
             case 'BRONTO': {
-                // Long neck dinosaur
+                // Massive round body
                 const body = new THREE.Mesh(
-                    new THREE.CapsuleGeometry(s * 0.5, s * 0.8, 4, 8), mat);
+                    new THREE.SphereGeometry(s * 0.6, 8, 6), mat);
                 body.position.y = s * 1.2;
+                body.scale.set(1.3, 0.9, 1);
+                body.castShadow = true;
+                group.add(body);
+                // Long neck (multiple segments)
+                for (let i = 0; i < 3; i++) {
+                    const neckSeg = new THREE.Mesh(
+                        new THREE.CapsuleGeometry(s * (0.15 - i * 0.02), s * 0.3, 4, 6), mat);
+                    neckSeg.position.set(0, s * (1.6 + i * 0.4), -s * (0.3 + i * 0.25));
+                    neckSeg.rotation.x = 0.3;
+                    group.add(neckSeg);
+                }
+                // Small head
+                const head = new THREE.Mesh(new THREE.SphereGeometry(s * 0.12, 6, 4), mat);
+                head.position.set(0, s * 2.9, -s * 1.1);
+                group.add(head);
+                // Thick legs
+                for (const dx of [-s * 0.35, s * 0.35]) {
+                    for (const dz of [-s * 0.2, s * 0.2]) {
+                        const leg = new THREE.Mesh(
+                            new THREE.CylinderGeometry(s * 0.12, s * 0.14, s * 0.8, 6), mat);
+                        leg.position.set(dx, s * 0.4, dz);
+                        group.add(leg);
+                    }
+                }
+                // Long tail
+                const tail = new THREE.Mesh(new THREE.ConeGeometry(s * 0.15, s * 1.5, 5), mat);
+                tail.position.set(0, s * 0.8, s * 0.9);
+                tail.rotation.x = -0.4;
+                group.add(tail);
+                break;
+            }
+            case 'TRICERATOPS': {
+                // Bulky body
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.4, s * 0.5, 4, 8), mat);
+                body.position.y = s * 0.8;
                 body.rotation.z = Math.PI / 2;
                 body.castShadow = true;
                 group.add(body);
-                // Neck
-                const neck = new THREE.Mesh(
-                    new THREE.CylinderGeometry(s * 0.12, s * 0.15, s * 1.5, 6), mat);
-                neck.position.set(0, s * 1.8, -s * 0.5);
-                neck.rotation.z = 0.3;
-                group.add(neck);
+                // Head with frill
+                const head = new THREE.Mesh(new THREE.SphereGeometry(s * 0.3, 6, 4), mat);
+                head.position.set(0, s * 0.9, -s * 0.6);
+                head.castShadow = true;
+                group.add(head);
+                // Frill (disc behind head)
+                const frillMat = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.8), roughness: 0.7 });
+                const frill = new THREE.Mesh(new THREE.CircleGeometry(s * 0.35, 8), frillMat);
+                frill.position.set(0, s * 1.1, -s * 0.45);
+                frill.rotation.x = -0.3;
+                group.add(frill);
+                // Horns (3)
+                const hornMat = new THREE.MeshStandardMaterial({ color: 0xf0e0c0, roughness: 0.5 });
+                const horn1 = new THREE.Mesh(new THREE.ConeGeometry(s * 0.04, s * 0.4, 5), hornMat);
+                horn1.position.set(0, s * 0.95, -s * 0.88);
+                horn1.rotation.x = Math.PI / 2.5;
+                group.add(horn1);
+                for (const dx of [-1, 1]) {
+                    const horn = new THREE.Mesh(new THREE.ConeGeometry(s * 0.03, s * 0.35, 5), hornMat);
+                    horn.position.set(dx * s * 0.2, s * 1.05, -s * 0.75);
+                    horn.rotation.x = Math.PI / 3;
+                    horn.rotation.z = dx * -0.2;
+                    group.add(horn);
+                }
+                // Legs
+                for (const dx of [-s * 0.25, s * 0.25]) {
+                    for (const dz of [-s * 0.15, s * 0.15]) {
+                        const leg = new THREE.Mesh(
+                            new THREE.CylinderGeometry(s * 0.08, s * 0.09, s * 0.5, 5), mat);
+                        leg.position.set(dx, s * 0.25, dz);
+                        group.add(leg);
+                    }
+                }
+                break;
+            }
+            case 'RAPTOR': {
+                // Sleek agile body
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.2, s * 0.4, 4, 8), mat);
+                body.position.y = s * 0.7;
+                body.rotation.x = 0.3;
+                body.castShadow = true;
+                group.add(body);
+                // Head
+                const head = new THREE.Mesh(new THREE.ConeGeometry(s * 0.12, s * 0.25, 5), mat);
+                head.position.set(0, s * 0.9, -s * 0.4);
+                head.rotation.x = Math.PI / 2.2;
+                group.add(head);
+                // Eyes
+                const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, emissive: 0x443300 });
+                for (const dx of [-1, 1]) {
+                    const eye = new THREE.Mesh(new THREE.SphereGeometry(s * 0.03, 4, 3), eyeMat);
+                    eye.position.set(dx * s * 0.1, s * 0.95, -s * 0.52);
+                    group.add(eye);
+                }
+                // Arms with claws
+                for (const dx of [-1, 1]) {
+                    const arm = new THREE.Mesh(
+                        new THREE.CapsuleGeometry(s * 0.04, s * 0.2, 3, 4), mat);
+                    arm.position.set(dx * s * 0.22, s * 0.65, -s * 0.15);
+                    arm.rotation.z = dx * 0.6;
+                    group.add(arm);
+                }
+                // Long tail
+                const tail = new THREE.Mesh(new THREE.ConeGeometry(s * 0.08, s * 0.7, 5), mat);
+                tail.position.set(0, s * 0.5, s * 0.5);
+                tail.rotation.x = -0.7;
+                group.add(tail);
+                // Strong legs
+                for (const dx of [-s * 0.12, s * 0.12]) {
+                    const leg = new THREE.Mesh(
+                        new THREE.CapsuleGeometry(s * 0.06, s * 0.25, 3, 5), mat);
+                    leg.position.set(dx, s * 0.3, 0);
+                    group.add(leg);
+                }
+                break;
+            }
+            case 'PTERANODON': {
+                // Flying dinosaur - hovering above ground
+                const flyH = s * 2.5;
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.12, s * 0.2, 4, 6), mat);
+                body.position.y = flyH;
+                body.rotation.z = Math.PI / 2;
+                body.castShadow = true;
+                group.add(body);
+                // Head crest
+                const head = new THREE.Mesh(new THREE.ConeGeometry(s * 0.08, s * 0.3, 4), mat);
+                head.position.set(0, flyH + s * 0.05, -s * 0.2);
+                head.rotation.x = Math.PI / 2;
+                group.add(head);
+                // Wide wings
+                const wingMat = new THREE.MeshStandardMaterial({
+                    color: color.clone().multiplyScalar(0.85), side: THREE.DoubleSide, roughness: 0.8 });
+                for (const dx of [-1, 1]) {
+                    const wing = new THREE.Mesh(
+                        new THREE.PlaneGeometry(s * 1.2, s * 0.35), wingMat);
+                    wing.position.set(dx * s * 0.65, flyH, 0);
+                    wing.rotation.z = dx * 0.15;
+                    wing.castShadow = true;
+                    group.add(wing);
+                }
+                break;
+            }
+            case 'STEGO': {
+                // Stout body
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.35, s * 0.5, 4, 8), mat);
+                body.position.y = s * 0.8;
+                body.rotation.z = Math.PI / 2;
+                body.castShadow = true;
+                group.add(body);
                 // Head
                 const head = new THREE.Mesh(new THREE.SphereGeometry(s * 0.15, 6, 4), mat);
-                head.position.set(0, s * 2.8, -s * 0.8);
+                head.position.set(0, s * 0.7, -s * 0.5);
                 group.add(head);
+                // Back plates (diamond shapes)
+                const plateMat = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.7), roughness: 0.6 });
+                for (let i = 0; i < 5; i++) {
+                    const plate = new THREE.Mesh(
+                        new THREE.ConeGeometry(s * 0.04, s * 0.25, 4), plateMat);
+                    plate.position.set(0, s * 1.2 + Math.sin(i * 0.8) * s * 0.05, -s * 0.2 + i * s * 0.15);
+                    plate.castShadow = true;
+                    group.add(plate);
+                }
+                // Tail spikes
+                const spikeMat = new THREE.MeshStandardMaterial({ color: 0xddc080 });
+                for (const dx of [-1, 1]) {
+                    for (let i = 0; i < 2; i++) {
+                        const spike = new THREE.Mesh(
+                            new THREE.ConeGeometry(s * 0.025, s * 0.2, 4), spikeMat);
+                        spike.position.set(dx * s * 0.12, s * 0.6, s * 0.55 + i * s * 0.12);
+                        spike.rotation.z = dx * 0.8;
+                        group.add(spike);
+                    }
+                }
+                // Legs
+                for (const dx of [-s * 0.2, s * 0.2]) {
+                    for (const dz of [-s * 0.12, s * 0.12]) {
+                        const leg = new THREE.Mesh(
+                            new THREE.CylinderGeometry(s * 0.08, s * 0.1, s * 0.5, 5), mat);
+                        leg.position.set(dx, s * 0.25, dz);
+                        group.add(leg);
+                    }
+                }
                 break;
             }
             default: {
-                // Generic dinosaur
+                // Generic dinosaur - still visible
                 const body = new THREE.Mesh(
-                    new THREE.CapsuleGeometry(s * 0.3, s * 0.6, 4, 8), mat);
+                    new THREE.CapsuleGeometry(s * 0.3, s * 0.5, 4, 8), mat);
                 body.position.y = s * 0.8;
                 body.castShadow = true;
                 group.add(body);
                 const head = new THREE.Mesh(new THREE.SphereGeometry(s * 0.2, 6, 4), mat);
-                head.position.set(0, s * 1.3, -s * 0.3);
+                head.position.set(0, s * 1.2, -s * 0.35);
+                head.castShadow = true;
                 group.add(head);
+                // Legs
+                for (const dx of [-s * 0.15, s * 0.15]) {
+                    const leg = new THREE.Mesh(
+                        new THREE.CylinderGeometry(s * 0.07, s * 0.08, s * 0.5, 5), mat);
+                    leg.position.set(dx, s * 0.25, 0);
+                    group.add(leg);
+                }
+                // Tail
+                const tail = new THREE.Mesh(new THREE.ConeGeometry(s * 0.12, s * 0.6, 5), mat);
+                tail.position.set(0, s * 0.5, s * 0.5);
+                tail.rotation.x = -0.5;
+                group.add(tail);
             }
         }
         return group;
@@ -897,40 +1224,65 @@ export class Renderer3D {
 
     // ==================== GIANTS ====================
     createGiantMesh(giant) {
-        const s = (giant.giantSize || GIANT_CONFIG.baseSize) * 0.12;
+        const s = (giant.giantSize || GIANT_CONFIG.baseSize) * 0.3;
         const color = new THREE.Color(GIANT_CONFIG.color);
         const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.1 });
         const group = new THREE.Group();
 
-        // Body
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.3, s * 0.8, 4, 8), mat);
-        body.position.y = s * 1.0;
+        // Massive body
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(s * 0.35, s * 0.7, 4, 8), mat);
+        body.position.y = s * 1.1;
         body.castShadow = true;
         group.add(body);
 
         // Head
         const headMat = new THREE.MeshStandardMaterial({ color: 0xc4a882, roughness: 0.7 });
-        const head = new THREE.Mesh(new THREE.SphereGeometry(s * 0.2, 8, 6), headMat);
-        head.position.y = s * 1.7;
+        const head = new THREE.Mesh(new THREE.SphereGeometry(s * 0.22, 8, 6), headMat);
+        head.position.y = s * 1.8;
         head.castShadow = true;
         group.add(head);
 
-        // Arms
+        // Eyes (glowing)
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0x662200 });
         for (const dx of [-1, 1]) {
-            const arm = new THREE.Mesh(
-                new THREE.CapsuleGeometry(s * 0.08, s * 0.5, 3, 6), mat);
-            arm.position.set(dx * s * 0.35, s * 1.0, 0);
-            arm.rotation.z = dx * 0.3;
-            group.add(arm);
+            const eye = new THREE.Mesh(new THREE.SphereGeometry(s * 0.04, 4, 3), eyeMat);
+            eye.position.set(dx * s * 0.1, s * 1.85, -s * 0.18);
+            group.add(eye);
         }
 
-        // Legs
+        // Huge arms
+        for (const dx of [-1, 1]) {
+            const arm = new THREE.Mesh(
+                new THREE.CapsuleGeometry(s * 0.1, s * 0.55, 3, 6), mat);
+            arm.position.set(dx * s * 0.42, s * 1.05, 0);
+            arm.rotation.z = dx * 0.25;
+            arm.castShadow = true;
+            group.add(arm);
+            // Fists
+            const fist = new THREE.Mesh(new THREE.SphereGeometry(s * 0.1, 5, 4), headMat);
+            fist.position.set(dx * s * 0.5, s * 0.5, 0);
+            group.add(fist);
+        }
+
+        // Thick legs
         for (const dx of [-1, 1]) {
             const leg = new THREE.Mesh(
-                new THREE.CapsuleGeometry(s * 0.1, s * 0.4, 3, 6), mat);
-            leg.position.set(dx * s * 0.15, s * 0.3, 0);
+                new THREE.CapsuleGeometry(s * 0.14, s * 0.45, 3, 6), mat);
+            leg.position.set(dx * s * 0.18, s * 0.35, 0);
+            leg.castShadow = true;
             group.add(leg);
+            // Feet
+            const foot = new THREE.Mesh(
+                new THREE.BoxGeometry(s * 0.2, s * 0.06, s * 0.25), mat);
+            foot.position.set(dx * s * 0.18, s * 0.03, -s * 0.05);
+            group.add(foot);
         }
+
+        // Loincloth / belt
+        const clothMat = new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.9 });
+        const cloth = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.36, s * 0.38, s * 0.12, 8), clothMat);
+        cloth.position.y = s * 0.7;
+        group.add(cloth);
 
         return group;
     }
@@ -943,7 +1295,7 @@ export class Renderer3D {
         const color = new THREE.Color(config.color);
         const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2 });
         const group = new THREE.Group();
-        const s = config.size * 0.15;
+        const s = config.size * 0.35;
 
         switch (vehicle.type) {
             case 'CART':
@@ -1291,12 +1643,12 @@ export class Renderer3D {
 
             // Animation: bobbing while walking
             if (person.state === NPC_STATE.WALKING || person.state === NPC_STATE.FLEEING) {
-                mesh.position.y += Math.abs(Math.sin(this.frame * 0.15)) * 0.03;
+                mesh.position.y += Math.abs(Math.sin(this.frame * 0.15)) * 0.06;
             }
             // Sleeping: lay down
             if (person.state === NPC_STATE.SLEEPING) {
                 mesh.rotation.z = Math.PI / 2;
-                mesh.position.y += 0.05;
+                mesh.position.y += 0.1;
             } else {
                 mesh.rotation.z = 0;
             }
@@ -1439,8 +1791,8 @@ export class Renderer3D {
         });
         let geo;
         if (type === 'person' || type === 'giant') {
-            const s = type === 'giant' ? size * 0.12 : 0.15;
-            geo = new THREE.CapsuleGeometry(s * 0.3, s * 0.8, 4, 8);
+            const s = type === 'giant' ? size * 0.3 : 0.85;
+            geo = new THREE.CapsuleGeometry(s * 0.3, s * 0.5, 4, 8);
         } else if (type === 'tree') {
             geo = new THREE.ConeGeometry(size * 0.2, size * 0.5, 7);
         } else {

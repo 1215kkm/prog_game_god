@@ -145,13 +145,11 @@ export class WeatherSystem {
     }
 
     strikeLightning() {
-        const cam = this.game.camera;
-        const worldX = cam.x + Math.random() * (this.game.canvas.width / cam.zoom);
-        const worldY = cam.y + Math.random() * (this.game.canvas.height / cam.zoom);
-
-        // Damage nearby entities
-        const tileX = Math.floor(worldX / 24);
-        const tileY = Math.floor(worldY / 24);
+        const cam = this.game.camera3d;
+        if (!cam) return;
+        const range = cam.getVisibleTileRange();
+        const tileX = Math.floor(range.startX + Math.random() * (range.endX - range.startX));
+        const tileY = Math.floor(range.startY + Math.random() * (range.endY - range.startY));
         this.damageArea(tileX, tileY, 3, 30);
     }
 

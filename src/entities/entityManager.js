@@ -205,11 +205,10 @@ export class EntityManager {
 
         const center = this.game.world.spawnPoint;
         if (this.game.renderer?.addShockwave) {
-            this.game.renderer.addShockwave(center.x, center.y, 50, '#ff4400');
+            this.game.renderer.addShockwave(center.x, center.y, 50, 0xff4400);
             this.game.renderer.addParticleEffect(center.x, center.y, 'large', '#ff6600');
         }
         if (this.game.camera3d) this.game.camera3d.shake(5, 60);
-        else if (this.game.camera?.shake) this.game.camera.shake(15, 60);
 
         for (const dino of this.dinosaurs) {
             dino.health -= 80;

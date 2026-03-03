@@ -23,11 +23,13 @@ export class Camera3D {
         // Dragging
         this.dragging = false;
         this.rotating = false;
+        this.tilting = false;
         this.dragStartX = 0;
         this.dragStartY = 0;
         this.dragTargetX = 0;
         this.dragTargetZ = 0;
         this.dragOrbitAngle = 0;
+        this.dragTiltAngle = 0;
 
         // Shake
         this.shakeAmount = 0;
@@ -77,6 +79,12 @@ export class Camera3D {
                 this.dragStartY = e.clientY;
                 this.dragTargetX = this.targetX;
                 this.dragTargetZ = this.targetZ;
+            } else if (e.button === 1) {
+                // Middle-click: tilt angle
+                this.tilting = true;
+                this.dragStartY = e.clientY;
+                this.dragTiltAngle = this.tiltAngle;
+                e.preventDefault();
             } else if (e.button === 2) {
                 this.rotating = true;
                 this.dragStartX = e.clientX;
@@ -94,6 +102,10 @@ export class Camera3D {
                 this.targetX = this.dragTargetX - (dx * cosA + dy * sinA);
                 this.targetZ = this.dragTargetZ - (-dx * sinA + dy * cosA);
                 this.clamp();
+            }
+            if (this.tilting) {
+                const dy = (e.clientY - this.dragStartY) * 0.005;
+                this.tiltAngle = Math.max(0.15, Math.min(Math.PI / 2.1, this.dragTiltAngle + dy));
             }
             if (this.rotating) {
                 const dx = (e.clientX - this.dragStartX) * 0.005;
@@ -119,6 +131,9 @@ export class Camera3D {
                     this.handleClick(e);
                 }
                 this.dragging = false;
+            }
+            if (e.button === 1) {
+                this.tilting = false;
             }
             if (e.button === 2) {
                 this.rotating = false;
