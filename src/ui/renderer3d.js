@@ -1,8 +1,79 @@
 // Three.js 3D Diorama Renderer
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { TERRAIN, TERRAIN_HEIGHTS, TERRAIN_RGB, BUILDING_TYPE, ANIMAL_TYPE,
          NPC_STATE, PERSONALITY, GIANT_CONFIG, DINOSAUR_TYPE, VEHICLE_TYPE,
          WORLD_WIDTH, WORLD_HEIGHT, SEASON_TINTS } from '../core/constants.js';
+
+// ===== Color Grading Shader =====
+const ColorGradingShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        saturation: { value: 1.15 },
+        contrast: { value: 1.08 },
+        brightness: { value: 0.02 },
+        vignetteAmount: { value: 0.3 },
+    },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float saturation;
+        uniform float contrast;
+        uniform float brightness;
+        uniform float vignetteAmount;
+        varying vec2 vUv;
+        void main() {
+            vec4 color = texture2D(tDiffuse, vUv);
+            // Brightness
+            color.rgb += brightness;
+            // Contrast
+            color.rgb = (color.rgb - 0.5) * contrast + 0.5;
+            // Saturation
+            float grey = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+            color.rgb = mix(vec3(grey), color.rgb, saturation);
+            // Warm tint
+            color.r *= 1.03; color.g *= 1.01;
+            // Vignette
+            vec2 uv = vUv * 2.0 - 1.0;
+            float vig = 1.0 - dot(uv, uv) * vignetteAmount;
+            color.rgb *= vig;
+            gl_FragColor = color;
+        }
+    `
+};
+
+// ===== Toon gradient texture =====
+function createToonGradient() {
+    const colors = new Uint8Array(4 * 4);
+    // 4-step gradient: shadow, mid-shadow, mid, highlight
+    colors[0] = 80; colors[1] = 80; colors[2] = 80; colors[3] = 255;
+    colors[4] = 140; colors[5] = 140; colors[6] = 140; colors[7] = 255;
+    colors[8] = 210; colors[9] = 210; colors[10] = 210; colors[11] = 255;
+    colors[12] = 255; colors[13] = 255; colors[14] = 255; colors[15] = 255;
+    const tex = new THREE.DataTexture(colors, 4, 1, THREE.RGBAFormat);
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
+    return tex;
+}
+
+// Shared toon gradient (created once, reused)
+let _sharedToonGradient = null;
+function getSharedToonGradient() {
+    if (!_sharedToonGradient) _sharedToonGradient = createToonGradient();
+    return _sharedToonGradient;
+}
+
+// Toon material factory (replaces MeshLambertMaterial for entities)
+function toonMat(params) {
+    return new THREE.MeshToonMaterial({
+        ...params,
+        gradientMap: getSharedToonGradient(),
+    });
+}
 
 // ===== HELPER: parse hex color =====
 function hexToRGB(hex) {
@@ -76,6 +147,19 @@ export class Renderer3D {
 
         // Performance: skip frames for entity sync at high speed
         this._lastEntitySync = 0;
+
+        // Post-processing
+        this.composer = null;
+        this.bloomPass = null;
+        this.colorGradingPass = null;
+
+        // Toon gradient texture (shared)
+        this.toonGradient = createToonGradient();
+
+        // Environmental details
+        this.grassInstances = null;
+        this.dustParticles = null;
+        this.fireflySystem = null;
     }
 
     init() {
@@ -120,13 +204,51 @@ export class Renderer3D {
         this.buildWater();
         this.buildInitialTrees();
         this.buildWeatherSystems();
+        this.buildGrassField();
+        this.buildDustParticles();
+        this.buildFireflies();
+
+        // Post-processing pipeline
+        this.setupPostProcessing();
 
         // Safety render so user sees terrain immediately (not black screen)
-        if (this.game.camera3d && this.game.camera3d.threeCamera) {
-            this.threeRenderer.render(this.scene, this.game.camera3d.threeCamera);
+        const cam = this.game.camera3d;
+        if (cam && cam.threeCamera) {
+            if (this.composer) {
+                this.composer.render();
+            } else {
+                this.threeRenderer.render(this.scene, cam.threeCamera);
+            }
         }
 
         window.addEventListener('resize', () => this.onResize());
+    }
+
+    setupPostProcessing() {
+        const cam = this.game.camera3d;
+        if (!cam || !cam.threeCamera) return;
+
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+
+        this.composer = new EffectComposer(this.threeRenderer);
+
+        // Base render pass
+        const renderPass = new RenderPass(this.scene, cam.threeCamera);
+        this.composer.addPass(renderPass);
+
+        // Bloom (subtle glow on bright areas)
+        this.bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(w, h),
+            0.35,   // strength
+            0.6,    // radius
+            0.85    // threshold
+        );
+        this.composer.addPass(this.bloomPass);
+
+        // Color grading (saturation, contrast, vignette)
+        this.colorGradingPass = new ShaderPass(ColorGradingShader);
+        this.composer.addPass(this.colorGradingPass);
     }
 
     // ==================== LIGHTING ====================
@@ -361,9 +483,7 @@ export class Renderer3D {
         const trunkR = size * 0.05;
         const trunkGeo = this._getCachedGeo('trunk', () =>
             new THREE.CylinderGeometry(0.08, 0.12, 1, 6));
-        const trunkMat = new THREE.MeshStandardMaterial({
-            color: 0x6B4226, roughness: 0.9, metalness: 0
-        });
+        const trunkMat = toonMat({ color: 0x6B4226 });
         const trunk = new THREE.Mesh(trunkGeo, trunkMat);
         trunk.scale.set(trunkR / 0.08, trunkH, trunkR / 0.08);
         trunk.position.y = trunkH / 2;
@@ -372,9 +492,7 @@ export class Renderer3D {
 
         // Foliage (layered cones for low-poly look)
         const foliageColor = new THREE.Color(tree.color || '#2a8030');
-        const foliageMat = new THREE.MeshStandardMaterial({
-            color: foliageColor, roughness: 0.8, metalness: 0
-        });
+        const foliageMat = toonMat({ color: foliageColor });
 
         const layers = Math.max(2, Math.floor(size / 2));
         for (let l = 0; l < layers; l++) {
@@ -407,12 +525,8 @@ export class Renderer3D {
         const baseColor = new THREE.Color(config.color);
         const size = config.size || 1;
 
-        const baseMat = new THREE.MeshStandardMaterial({
-            color: baseColor, roughness: 0.7, metalness: 0.05
-        });
-        const roofMat = new THREE.MeshStandardMaterial({
-            color: baseColor.clone().multiplyScalar(0.7), roughness: 0.6, metalness: 0.05
-        });
+        const baseMat = toonMat({ color: baseColor });
+        const roofMat = toonMat({ color: baseColor.clone().multiplyScalar(0.7) });
 
         switch (type) {
             case 'HUT': {
@@ -448,7 +562,7 @@ export class Renderer3D {
                 base.position.y = 0.125;
                 group.add(base);
                 // Fence posts
-                const fenceMat = new THREE.MeshStandardMaterial({ color: 0x8B6914, roughness: 0.9 });
+                const fenceMat = toonMat({ color: 0x8B6914 });
                 for (let i = -0.7; i <= 0.7; i += 0.35) {
                     for (const z of [-0.8, 0.8]) {
                         const post = new THREE.Mesh(
@@ -494,7 +608,7 @@ export class Renderer3D {
                 pyramid.castShadow = true;
                 group.add(pyramid);
                 // Pillars
-                const pillarMat = new THREE.MeshStandardMaterial({ color: 0xf0e6d0, roughness: 0.5 });
+                const pillarMat = toonMat({ color: 0xf0e6d0 });
                 for (const dx of [-0.5, 0.5]) {
                     for (const dz of [-0.5, 0.5]) {
                         const pillar = new THREE.Mesh(
@@ -512,8 +626,7 @@ export class Renderer3D {
                 base.position.y = 0.075;
                 group.add(base);
                 // Canopy
-                const canopyMat = new THREE.MeshStandardMaterial({
-                    color: 0xcc8844, roughness: 0.7, side: THREE.DoubleSide });
+                const canopyMat = toonMat({ color: 0xcc8844, side: THREE.DoubleSide });
                 const canopy = new THREE.Mesh(
                     new THREE.BoxGeometry(1.5, 0.05, 1.5), canopyMat);
                 canopy.position.y = 0.6;
@@ -550,7 +663,7 @@ export class Renderer3D {
                 keep.castShadow = true;
                 group.add(keep);
                 // Towers
-                const towerMat = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.6 });
+                const towerMat = toonMat({ color: 0x808080 });
                 for (const dx of [-0.85, 0.85]) {
                     for (const dz of [-0.85, 0.85]) {
                         const tower = new THREE.Mesh(
@@ -575,7 +688,7 @@ export class Renderer3D {
                 // Chimney
                 const chimney = new THREE.Mesh(
                     new THREE.CylinderGeometry(0.06, 0.08, 0.4, 8),
-                    new THREE.MeshStandardMaterial({ color: 0x555555 }));
+                    toonMat({ color: 0x555555 }));
                 chimney.position.set(0.2, 0.7, 0);
                 group.add(chimney);
                 const roof = new THREE.Mesh(
@@ -612,7 +725,7 @@ export class Renderer3D {
                 body.castShadow = true;
                 group.add(body);
                 // Smokestacks
-                const stackMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.5 });
+                const stackMat = toonMat({ color: 0x444444 });
                 for (const dx of [-0.3, 0.3]) {
                     const stack = new THREE.Mesh(
                         new THREE.CylinderGeometry(0.08, 0.1, 0.6, 8), stackMat);
@@ -629,7 +742,7 @@ export class Renderer3D {
                 body.castShadow = true;
                 group.add(body);
                 // Red cross
-                const crossMat = new THREE.MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 });
+                const crossMat = toonMat({ color: 0xff0000 });
                 const h1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.08), crossMat);
                 h1.position.set(0, 0.82, 0.61);
                 group.add(h1);
@@ -640,8 +753,7 @@ export class Renderer3D {
                 break;
             }
             case 'SKYSCRAPER': {
-                const glassMat = new THREE.MeshStandardMaterial({
-                    color: 0x88aacc, roughness: 0.1, metalness: 0.6 });
+                const glassMat = toonMat({ color: 0x88aacc });
                 const body = new THREE.Mesh(
                     new THREE.BoxGeometry(1.2, 3.5, 1.2), glassMat);
                 body.position.y = 1.75;
@@ -650,7 +762,7 @@ export class Renderer3D {
                 // Antenna
                 const antenna = new THREE.Mesh(
                     new THREE.CylinderGeometry(0.02, 0.02, 0.5, 4),
-                    new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+                    toonMat({ color: 0xcccccc }));
                 antenna.position.y = 3.75;
                 group.add(antenna);
                 break;
@@ -683,15 +795,15 @@ export class Renderer3D {
 
         // ---- Materials ----
         const shirtColor = new THREE.Color(pConfig.color);
-        const shirtMat = new THREE.MeshLambertMaterial({ color: shirtColor });
+        const shirtMat = toonMat({ color: shirtColor });
 
         const pantsOpts = [0x3a4a6a, 0x4a3a2a, 0x2a3a2a, 0x5a4a3a, 0x3a3a4a, 0x524236, 0x3e4e3e, 0x484868];
-        const pantsMat = new THREE.MeshLambertMaterial({ color: pantsOpts[h % pantsOpts.length] });
+        const pantsMat = toonMat({ color: pantsOpts[h % pantsOpts.length] });
 
         const skinOpts = [0xf5c8a0, 0xe8b888, 0xd4a574, 0xc49060, 0xffdcb8, 0xe0c090];
-        const skinMat = new THREE.MeshLambertMaterial({ color: skinOpts[h % skinOpts.length] });
+        const skinMat = toonMat({ color: skinOpts[h % skinOpts.length] });
 
-        const shoeMat = new THREE.MeshLambertMaterial({ color: 0x3a2a1a });
+        const shoeMat = toonMat({ color: 0x3a2a1a });
 
         // ---- HEAD (big, boxy = chibi style) ----
         const hs = 0.15 * s; // head size
@@ -722,7 +834,7 @@ export class Renderer3D {
 
         // Hair (varied by gender and hash)
         const hairOpts = [0x2a1a0a, 0x4a2a10, 0x1a0a00, 0x6a4420, 0x3a2010, 0x8a5530, 0x1a1a2a, 0xaa7744];
-        const hairMat = new THREE.MeshLambertMaterial({ color: hairOpts[h % hairOpts.length] });
+        const hairMat = toonMat({ color: hairOpts[h % hairOpts.length] });
 
         if (person.gender === 'female') {
             // Female: fuller hair block
@@ -835,7 +947,7 @@ export class Renderer3D {
         }
         if (personality === 'LEADER') {
             // Golden crown
-            const crownMat = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.3, metalness: 0.6 });
+            const crownMat = toonMat({ color: 0xffd700 });
             const crownBase = new THREE.Mesh(new THREE.CylinderGeometry(hs * 0.5, hs * 0.55, 0.04 * s, 6), crownMat);
             crownBase.position.y = 0.65 * s;
             group.add(crownBase);
@@ -847,7 +959,7 @@ export class Renderer3D {
             }
         }
         if (personality === 'SCHOLAR') {
-            const hatMat = new THREE.MeshLambertMaterial({ color: 0x222244 });
+            const hatMat = toonMat({ color: 0x222244 });
             const hat = new THREE.Mesh(new THREE.BoxGeometry(hs * 1.3, 0.06 * s, hs * 1.3), hatMat);
             hat.position.y = 0.67 * s;
             group.add(hat);
@@ -856,19 +968,19 @@ export class Renderer3D {
             group.add(top);
             // Tassel
             const tassel = new THREE.Mesh(new THREE.BoxGeometry(0.01 * s, 0.06 * s, 0.01 * s),
-                new THREE.MeshLambertMaterial({ color: 0xffcc00 }));
+                toonMat({ color: 0xffcc00 }));
             tassel.position.set(hs * 0.6, 0.67 * s, 0);
             group.add(tassel);
         }
         if (personality === 'WARRIOR') {
             // Sword on back
-            const swordMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.7, roughness: 0.3 });
+            const swordMat = toonMat({ color: 0xaaaaaa });
             const blade = new THREE.Mesh(new THREE.BoxGeometry(0.015 * s, 0.22 * s, 0.005 * s), swordMat);
             blade.position.set(0.06 * s, 0.45 * s, 0.07 * s);
             blade.rotation.z = 0.15;
             group.add(blade);
             const hilt = new THREE.Mesh(new THREE.BoxGeometry(0.04 * s, 0.015 * s, 0.015 * s),
-                new THREE.MeshLambertMaterial({ color: 0x5a3a1a }));
+                toonMat({ color: 0x5a3a1a }));
             hilt.position.set(0.055 * s, 0.33 * s, 0.07 * s);
             group.add(hilt);
         }
@@ -881,7 +993,7 @@ export class Renderer3D {
             group.add(glow);
             // Staff
             const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.01 * s, 0.01 * s, 0.45 * s, 4),
-                new THREE.MeshLambertMaterial({ color: 0x8a6a4a }));
+                toonMat({ color: 0x8a6a4a }));
             staff.position.set(-0.15 * s, 0.35 * s, 0.04 * s);
             group.add(staff);
             const orb = new THREE.Mesh(new THREE.SphereGeometry(0.025 * s, 6, 4),
@@ -920,7 +1032,7 @@ export class Renderer3D {
             pivot.add(legMesh);
             // Hoof/paw
             const hoof = new THREE.Mesh(new THREE.BoxGeometry(legW * 1.15, legW * 0.5, legW * 1.3),
-                new THREE.MeshLambertMaterial({ color: 0x2a1a0a }));
+                toonMat({ color: 0x2a1a0a }));
             hoof.position.y = -legH;
             pivot.add(hoof);
             group.add(pivot);
@@ -958,7 +1070,7 @@ export class Renderer3D {
         if (!config) return null;
 
         const color = new THREE.Color(config.color);
-        const mat = new THREE.MeshLambertMaterial({ color });
+        const mat = toonMat({ color });
         const group = new THREE.Group();
 
         switch (type) {
@@ -985,13 +1097,13 @@ export class Renderer3D {
                     group.add(ear);
                     // Inner ear (pink)
                     const inner = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.08, 0.005),
-                        new THREE.MeshLambertMaterial({ color: 0xffbbbb }));
+                        toonMat({ color: 0xffbbbb }));
                     inner.position.set(dx, 0.35, -0.11);
                     group.add(inner);
                 }
                 // Fluffy tail
                 const tail = new THREE.Mesh(new THREE.SphereGeometry(0.04, 5, 4),
-                    new THREE.MeshLambertMaterial({ color: 0xffffff }));
+                    toonMat({ color: 0xffffff }));
                 tail.position.set(0, 0.15, 0.12);
                 group.add(tail);
                 // Animated back legs
@@ -1021,7 +1133,7 @@ export class Renderer3D {
                 });
                 this._addEyes(group, 0.5, -0.29, 0.035, 0.012);
                 // Antlers
-                const antlerMat = new THREE.MeshLambertMaterial({ color: 0x8B6914 });
+                const antlerMat = toonMat({ color: 0x8B6914 });
                 for (const dx of [-1, 1]) {
                     const base = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.14, 0.015), antlerMat);
                     base.position.set(dx * 0.04, 0.58, -0.22);
@@ -1034,13 +1146,13 @@ export class Renderer3D {
                 }
                 // Short tail
                 const tail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.04),
-                    new THREE.MeshLambertMaterial({ color: 0xffffff }));
+                    toonMat({ color: 0xffffff }));
                 tail.position.set(0, 0.42, 0.18);
                 group.add(tail);
                 break;
             }
             case 'WOLF': {
-                const darkMat = new THREE.MeshLambertMaterial({ color: color.clone().multiplyScalar(0.8) });
+                const darkMat = toonMat({ color: color.clone().multiplyScalar(0.8) });
                 this._makeQuadrupedBox(group, mat, {
                     bodyW: 0.18, bodyH: 0.14, bodyL: 0.28, bodyY: 0.3,
                     legW: 0.035, legH: 0.18, headW: 0.11, headH: 0.09, headZ: -0.22, headY: 0.34
@@ -1080,7 +1192,7 @@ export class Renderer3D {
                     group.add(ear);
                 }
                 // Snout
-                const snoutMat = new THREE.MeshLambertMaterial({ color: color.clone().lerp(new THREE.Color(0xffffff), 0.3) });
+                const snoutMat = toonMat({ color: color.clone().lerp(new THREE.Color(0xffffff), 0.3) });
                 const snout = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.06), snoutMat);
                 snout.position.set(0, 0.43, -0.3);
                 group.add(snout);
@@ -1105,12 +1217,12 @@ export class Renderer3D {
                 this._addEyes(group, flyH + 0.055, -0.075, 0.02, 0.008);
                 // Beak
                 const beak = new THREE.Mesh(new THREE.ConeGeometry(0.015, 0.04, 4),
-                    new THREE.MeshLambertMaterial({ color: 0xffaa00 }));
+                    toonMat({ color: 0xffaa00 }));
                 beak.position.set(0, flyH + 0.04, -0.085);
                 beak.rotation.x = Math.PI / 2;
                 group.add(beak);
                 // Animated wings (flat box shapes)
-                const wingMat = new THREE.MeshLambertMaterial({
+                const wingMat = toonMat({
                     color: color.clone().multiplyScalar(0.8), side: THREE.DoubleSide });
                 const leftWing = new THREE.Group();
                 leftWing.position.set(-0.04, flyH, 0);
@@ -1148,12 +1260,12 @@ export class Renderer3D {
                 const tailPivot = new THREE.Group();
                 tailPivot.position.set(0, -0.3, 0.1);
                 const tailMesh = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.08, 0.06),
-                    new THREE.MeshLambertMaterial({ color: color.clone().multiplyScalar(0.8) }));
+                    toonMat({ color: color.clone().multiplyScalar(0.8) }));
                 tailMesh.position.z = 0.04;
                 tailPivot.add(tailMesh);
                 group.add(tailPivot);
                 // Fins
-                const finMat = new THREE.MeshLambertMaterial({ color: color.clone().multiplyScalar(0.7), side: THREE.DoubleSide });
+                const finMat = toonMat({ color: color.clone().multiplyScalar(0.7), side: THREE.DoubleSide });
                 const topFin = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.04, 0.06), finMat);
                 topFin.position.set(0, -0.23, 0);
                 group.add(topFin);
@@ -1216,8 +1328,8 @@ export class Renderer3D {
         if (!config) return null;
 
         const color = new THREE.Color(config.color);
-        const mat = new THREE.MeshLambertMaterial({ color });
-        const bellyMat = new THREE.MeshLambertMaterial({ color: color.clone().lerp(new THREE.Color(0xffffff), 0.3) });
+        const mat = toonMat({ color });
+        const bellyMat = toonMat({ color: color.clone().lerp(new THREE.Color(0xffffff), 0.3) });
         const group = new THREE.Group();
         const s = config.size * 0.35;
 
@@ -1319,7 +1431,7 @@ export class Renderer3D {
                 head.castShadow = true;
                 group.add(head);
                 // Frill (flat box behind head)
-                const frillMat = new THREE.MeshLambertMaterial({ color: color.clone().multiplyScalar(0.8) });
+                const frillMat = toonMat({ color: color.clone().multiplyScalar(0.8) });
                 const frill = new THREE.Mesh(new THREE.BoxGeometry(s * 0.65, s * 0.45, s * 0.04), frillMat);
                 frill.position.set(0, s * 1.05, -s * 0.35);
                 frill.rotation.x = -0.2;
@@ -1327,7 +1439,7 @@ export class Renderer3D {
                 // Eyes
                 this._addEyes(group, s * 0.9, -s * 0.73, s * 0.12, s * 0.03);
                 // 3 horns
-                const hornMat = new THREE.MeshLambertMaterial({ color: 0xf0e0c0 });
+                const hornMat = toonMat({ color: 0xf0e0c0 });
                 const horn1 = new THREE.Mesh(new THREE.ConeGeometry(s * 0.04, s * 0.3, 4), hornMat);
                 horn1.position.set(0, s * 0.88, -s * 0.78);
                 horn1.rotation.x = Math.PI / 2.5;
@@ -1375,7 +1487,7 @@ export class Renderer3D {
                     group.add(arm);
                     // Claws
                     const claw = new THREE.Mesh(new THREE.ConeGeometry(s * 0.015, s * 0.06, 3),
-                        new THREE.MeshLambertMaterial({ color: 0xddd8c0 }));
+                        toonMat({ color: 0xddd8c0 }));
                     claw.position.set(dx * s * 0.2, s * 0.48, -s * 0.15);
                     claw.rotation.x = Math.PI;
                     group.add(claw);
@@ -1408,14 +1520,14 @@ export class Renderer3D {
                 group.add(crest);
                 // Beak
                 const beak = new THREE.Mesh(new THREE.ConeGeometry(s * 0.03, s * 0.15, 4),
-                    new THREE.MeshLambertMaterial({ color: 0xddcc80 }));
+                    toonMat({ color: 0xddcc80 }));
                 beak.position.set(0, flyH + s * 0.04, -s * 0.32);
                 beak.rotation.x = Math.PI / 2;
                 group.add(beak);
                 // Eyes
                 this._addEyes(group, flyH + s * 0.1, -s * 0.27, s * 0.04, s * 0.015);
                 // Wings (animated box panels)
-                const wingMat = new THREE.MeshLambertMaterial({
+                const wingMat = toonMat({
                     color: color.clone().multiplyScalar(0.85), side: THREE.DoubleSide });
                 const leftWing = new THREE.Group();
                 leftWing.position.set(-s * 0.1, flyH, 0);
@@ -1447,7 +1559,7 @@ export class Renderer3D {
                 // Eyes
                 this._addEyes(group, s * 0.74, -s * 0.64, s * 0.06, s * 0.02);
                 // Back plates (diamond box shapes)
-                const plateMat = new THREE.MeshLambertMaterial({ color: color.clone().multiplyScalar(0.7) });
+                const plateMat = toonMat({ color: color.clone().multiplyScalar(0.7) });
                 for (let i = 0; i < 7; i++) {
                     const pH = s * (0.18 + Math.sin((i / 6) * Math.PI) * 0.1);
                     const plate = new THREE.Mesh(new THREE.BoxGeometry(s * 0.03, pH, s * 0.06), plateMat);
@@ -1457,7 +1569,7 @@ export class Renderer3D {
                     group.add(plate);
                 }
                 // Tail spikes
-                const spikeMat = new THREE.MeshLambertMaterial({ color: 0xddc080 });
+                const spikeMat = toonMat({ color: 0xddc080 });
                 for (const dx of [-1, 1]) {
                     for (let i = 0; i < 2; i++) {
                         const spike = new THREE.Mesh(new THREE.ConeGeometry(s * 0.03, s * 0.2, 4), spikeMat);
@@ -1491,7 +1603,7 @@ export class Renderer3D {
     createGiantMesh(giant) {
         const s = (giant.giantSize || GIANT_CONFIG.baseSize) * 0.3;
         const color = new THREE.Color(GIANT_CONFIG.color);
-        const mat = new THREE.MeshLambertMaterial({ color });
+        const mat = toonMat({ color });
         const group = new THREE.Group();
 
         // Massive boxy body
@@ -1501,7 +1613,7 @@ export class Renderer3D {
         group.add(body);
 
         // Big boxy head
-        const skinMat = new THREE.MeshLambertMaterial({ color: 0xc4a882 });
+        const skinMat = toonMat({ color: 0xc4a882 });
         const head = new THREE.Mesh(new THREE.BoxGeometry(s * 0.4, s * 0.35, s * 0.35), skinMat);
         head.position.y = s * 1.75;
         head.castShadow = true;
@@ -1544,7 +1656,7 @@ export class Renderer3D {
         group.add(rightArm);
 
         // Club weapon in right hand
-        const clubMat = new THREE.MeshLambertMaterial({ color: 0x5a4020 });
+        const clubMat = toonMat({ color: 0x5a4020 });
         const club = new THREE.Mesh(new THREE.BoxGeometry(s * 0.08, s * 0.5, s * 0.08), clubMat);
         club.position.y = -s * 0.85;
         rightArm.add(club);
@@ -1578,7 +1690,7 @@ export class Renderer3D {
         group.userData.limbs = { leftArm, rightArm, leftLeg, rightLeg, scale: s };
 
         // Loincloth / belt
-        const clothMat = new THREE.MeshLambertMaterial({ color: 0x6a4a2a });
+        const clothMat = toonMat({ color: 0x6a4a2a });
         const cloth = new THREE.Mesh(new THREE.BoxGeometry(s * 0.62, s * 0.1, s * 0.52), clothMat);
         cloth.position.y = s * 0.72;
         group.add(cloth);
@@ -1592,12 +1704,12 @@ export class Renderer3D {
         if (!config) return null;
 
         const color = new THREE.Color(config.color);
-        const mat = new THREE.MeshLambertMaterial({ color });
+        const mat = toonMat({ color });
         const group = new THREE.Group();
         const s = config.size * 0.35;
 
-        const wheelMat = new THREE.MeshLambertMaterial({ color: 0x3a2a1a });
-        const windowMat = new THREE.MeshLambertMaterial({ color: 0x88bbdd, transparent: true, opacity: 0.7 });
+        const wheelMat = toonMat({ color: 0x3a2a1a });
+        const windowMat = toonMat({ color: 0x88bbdd, transparent: true, opacity: 0.7 });
 
         // Helper: add box wheels
         const addWheels = (positions, radius, width) => {
@@ -1609,7 +1721,7 @@ export class Renderer3D {
                 group.add(wheel);
                 // Hub cap
                 const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.4, radius * 0.4, width * 1.1, 5),
-                    new THREE.MeshLambertMaterial({ color: 0x888888 }));
+                    toonMat({ color: 0x888888 }));
                 hub.position.set(x, y, z);
                 hub.rotation.z = Math.PI / 2;
                 group.add(hub);
@@ -1620,7 +1732,7 @@ export class Renderer3D {
             case 'CART':
             case 'CARRIAGE': {
                 // Wooden cart body
-                const woodMat = new THREE.MeshLambertMaterial({ color: 0x8B6914 });
+                const woodMat = toonMat({ color: 0x8B6914 });
                 const body = new THREE.Mesh(new THREE.BoxGeometry(s * 0.5, s * 0.2, s * 0.35), woodMat);
                 body.position.y = s * 0.28;
                 body.castShadow = true;
@@ -1649,7 +1761,7 @@ export class Renderer3D {
                 engine.castShadow = true;
                 group.add(engine);
                 // Roof
-                const roofMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+                const roofMat = toonMat({ color: 0x222222 });
                 const roof = new THREE.Mesh(new THREE.BoxGeometry(s * 0.5, s * 0.04, s * 0.32), roofMat);
                 roof.position.y = s * 0.5;
                 group.add(roof);
@@ -1670,7 +1782,7 @@ export class Renderer3D {
                 }
                 // Carriages
                 for (let i = 1; i <= 2; i++) {
-                    const carMat = new THREE.MeshLambertMaterial({ color: i === 1 ? 0x8B4513 : 0x6B3510 });
+                    const carMat = toonMat({ color: i === 1 ? 0x8B4513 : 0x6B3510 });
                     const car = new THREE.Mesh(new THREE.BoxGeometry(s * 0.42, s * 0.28, s * 0.28), carMat);
                     car.position.set(i * s * 0.52, s * 0.25, 0);
                     car.castShadow = true;
@@ -1724,7 +1836,7 @@ export class Renderer3D {
                 body.castShadow = true;
                 group.add(body);
                 // Roof
-                const roofMat = new THREE.MeshLambertMaterial({ color: color.clone().multiplyScalar(0.8) });
+                const roofMat = toonMat({ color: color.clone().multiplyScalar(0.8) });
                 const roof = new THREE.Mesh(new THREE.BoxGeometry(s * 0.63, s * 0.03, s * 0.21), roofMat);
                 roof.position.y = s * 0.33;
                 group.add(roof);
@@ -1768,7 +1880,7 @@ export class Renderer3D {
                     group.add(leg);
                 }
                 // Mane
-                const maneMat = new THREE.MeshLambertMaterial({ color: 0x2a1a0a });
+                const maneMat = toonMat({ color: 0x2a1a0a });
                 const mane = new THREE.Mesh(new THREE.BoxGeometry(s * 0.02, s * 0.06, s * 0.1), maneMat);
                 mane.position.set(0, s * 0.3, -s * 0.04);
                 group.add(mane);
@@ -2009,6 +2121,182 @@ export class Renderer3D {
             this.screenFlashAlpha *= 0.9;
             if (this.screenFlashAlpha < 0.01) this.screenFlashAlpha = 0;
         }
+    }
+
+    // ==================== ENVIRONMENTAL DETAIL ====================
+    buildGrassField() {
+        // Instanced grass blades on grass/forest terrain
+        const bladeGeo = new THREE.PlaneGeometry(0.15, 0.5);
+        bladeGeo.translate(0, 0.25, 0); // pivot at base
+        const grassMat = toonMat({
+            color: 0x4a9e3f,
+            side: THREE.DoubleSide,
+            transparent: true,
+            alphaTest: 0.3,
+        });
+
+        const world = this.game.world;
+        const positions = [];
+        const step = 3; // sample every 3 tiles
+        for (let z = 0; z < WORLD_HEIGHT; z += step) {
+            for (let x = 0; x < WORLD_WIDTH; x += step) {
+                const terrain = world.getTerrain(x, z);
+                if (terrain === TERRAIN.GRASS || terrain === TERRAIN.FOREST) {
+                    const count = terrain === TERRAIN.FOREST ? 2 : 3;
+                    for (let i = 0; i < count; i++) {
+                        positions.push([
+                            x + Math.random() * step,
+                            z + Math.random() * step,
+                        ]);
+                    }
+                }
+            }
+        }
+
+        const maxCount = Math.min(positions.length, 15000);
+        const mesh = new THREE.InstancedMesh(bladeGeo, grassMat, maxCount);
+        const dummy = new THREE.Object3D();
+
+        for (let i = 0; i < maxCount; i++) {
+            const [gx, gz] = positions[i];
+            const h = this.getTerrainHeight(gx, gz);
+            dummy.position.set(gx, h, gz);
+            dummy.rotation.y = Math.random() * Math.PI;
+            dummy.rotation.x = (Math.random() - 0.5) * 0.2;
+            const s = 0.6 + Math.random() * 0.8;
+            dummy.scale.set(s, s, s);
+            dummy.updateMatrix();
+            mesh.setMatrixAt(i, dummy.matrix);
+            // Vary grass color
+            const gc = new THREE.Color().setHSL(
+                0.25 + Math.random() * 0.08,
+                0.5 + Math.random() * 0.3,
+                0.35 + Math.random() * 0.15
+            );
+            mesh.setColorAt(i, gc);
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        mesh.receiveShadow = true;
+        this.grassInstances = mesh;
+        this.terrainGroup.add(mesh);
+    }
+
+    buildDustParticles() {
+        // Floating dust motes in the air
+        const count = 400;
+        const geo = new THREE.BufferGeometry();
+        const pos = new Float32Array(count * 3);
+        const sizes = new Float32Array(count);
+        for (let i = 0; i < count; i++) {
+            pos[i * 3] = Math.random() * WORLD_WIDTH;
+            pos[i * 3 + 1] = 1 + Math.random() * 8;
+            pos[i * 3 + 2] = Math.random() * WORLD_HEIGHT;
+            sizes[i] = 0.08 + Math.random() * 0.15;
+        }
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+        const mat = new THREE.PointsMaterial({
+            color: 0xffe8c0,
+            size: 0.12,
+            transparent: true,
+            opacity: 0.4,
+            sizeAttenuation: true,
+        });
+        this.dustParticles = new THREE.Points(geo, mat);
+        this.effectGroup.add(this.dustParticles);
+    }
+
+    updateDustParticles() {
+        if (!this.dustParticles) return;
+        const cam = this.game.camera3d;
+        if (!cam) return;
+        const pos = this.dustParticles.geometry.attributes.position;
+        const cx = cam.targetX;
+        const cz = cam.targetZ;
+        for (let i = 0; i < pos.count; i++) {
+            // Gentle floating motion
+            const px = pos.getX(i);
+            let py = pos.getY(i);
+            const pz = pos.getZ(i);
+            py += Math.sin(this.frame * 0.01 + i) * 0.003;
+            pos.setX(i, px + Math.sin(this.frame * 0.005 + i * 0.7) * 0.005);
+            pos.setY(i, py);
+            pos.setZ(i, pz + Math.cos(this.frame * 0.005 + i * 0.3) * 0.005);
+            // Recycle particles far from camera
+            const dx = px - cx;
+            const dz = pz - cz;
+            if (dx * dx + dz * dz > 2500) {
+                pos.setX(i, cx + (Math.random() - 0.5) * 40);
+                pos.setZ(i, cz + (Math.random() - 0.5) * 40);
+                pos.setY(i, 1 + Math.random() * 8);
+            }
+        }
+        pos.needsUpdate = true;
+        // Visibility based on sunlight (less visible at night)
+        const sunH = Math.sin((this.game.timeOfDay - 0.25) * Math.PI * 2);
+        this.dustParticles.material.opacity = Math.max(0.05, sunH * 0.5);
+    }
+
+    buildFireflies() {
+        // Night-time fireflies
+        const count = 150;
+        const geo = new THREE.BufferGeometry();
+        const pos = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+            pos[i * 3] = Math.random() * WORLD_WIDTH;
+            pos[i * 3 + 1] = 0.5 + Math.random() * 3;
+            pos[i * 3 + 2] = Math.random() * WORLD_HEIGHT;
+        }
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        const mat = new THREE.PointsMaterial({
+            color: 0xaaff44,
+            size: 0.2,
+            transparent: true,
+            opacity: 0,
+            sizeAttenuation: true,
+        });
+        this.fireflySystem = new THREE.Points(geo, mat);
+        this.effectGroup.add(this.fireflySystem);
+    }
+
+    updateFireflies() {
+        if (!this.fireflySystem) return;
+        const t = this.game.timeOfDay;
+        const isNight = t < 0.22 || t > 0.78;
+        if (!isNight) {
+            this.fireflySystem.material.opacity = 0;
+            return;
+        }
+        const cam = this.game.camera3d;
+        if (!cam) return;
+        const pos = this.fireflySystem.geometry.attributes.position;
+        const cx = cam.targetX;
+        const cz = cam.targetZ;
+        for (let i = 0; i < pos.count; i++) {
+            const px = pos.getX(i);
+            let py = pos.getY(i);
+            const pz = pos.getZ(i);
+            // Gentle random wandering
+            pos.setX(i, px + Math.sin(this.frame * 0.02 + i * 1.3) * 0.02);
+            pos.setY(i, py + Math.sin(this.frame * 0.015 + i * 0.7) * 0.008);
+            pos.setZ(i, pz + Math.cos(this.frame * 0.018 + i * 0.9) * 0.02);
+            // Recycle far ones
+            const dx = px - cx;
+            const dz = pz - cz;
+            if (dx * dx + dz * dz > 1600) {
+                pos.setX(i, cx + (Math.random() - 0.5) * 30);
+                pos.setZ(i, cz + (Math.random() - 0.5) * 30);
+                pos.setY(i, 0.5 + Math.random() * 3);
+            }
+        }
+        pos.needsUpdate = true;
+        // Pulsing glow
+        const pulse = 0.3 + Math.sin(this.frame * 0.06) * 0.15;
+        this.fireflySystem.material.opacity = pulse;
+        this.fireflySystem.material.size = 0.15 + Math.sin(this.frame * 0.08) * 0.08;
     }
 
     // ==================== ENTITY SYNC ====================
@@ -2415,17 +2703,39 @@ export class Renderer3D {
         this.updateWater();
         this.updateWeather();
         this.updateEffects();
+        this.updateDustParticles();
+        this.updateFireflies();
 
-        // Camera shake
+        // Camera
         const cam = this.game.camera3d;
         if (cam.threeCamera) {
-            // Update shadow camera to follow view
             this.sunLight.shadow.camera.updateProjectionMatrix();
 
-            this.threeRenderer.render(this.scene, cam.threeCamera);
+            // Update bloom strength based on time of day
+            if (this.bloomPass) {
+                const t = this.game.timeOfDay;
+                const sunH = Math.sin((t - 0.25) * Math.PI * 2);
+                if (sunH < -0.1) {
+                    // Night: stronger bloom for lights
+                    this.bloomPass.strength = 0.6;
+                } else if (sunH < 0.1) {
+                    // Sunrise/sunset: warm bloom
+                    this.bloomPass.strength = 0.5;
+                } else {
+                    // Day: subtle
+                    this.bloomPass.strength = 0.25;
+                }
+            }
+
+            // Render with post-processing
+            if (this.composer) {
+                this.composer.render();
+            } else {
+                this.threeRenderer.render(this.scene, cam.threeCamera);
+            }
         }
 
-        // Screen flash overlay (using CSS for simplicity)
+        // Screen flash overlay
         const canvas3d = this.threeRenderer.domElement;
         if (this.screenFlashAlpha > 0.01) {
             canvas3d.style.filter = `brightness(${1 + this.screenFlashAlpha * 2})`;
@@ -2476,6 +2786,9 @@ export class Renderer3D {
         const w = window.innerWidth;
         const h = window.innerHeight;
         this.threeRenderer.setSize(w, h);
+        if (this.composer) {
+            this.composer.setSize(w, h);
+        }
         if (this.game.camera3d) {
             this.game.camera3d.onResize(w, h);
         }
