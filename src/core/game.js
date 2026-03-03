@@ -1,9 +1,9 @@
-import { TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS, ERAS } from './constants.js';
+import { TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS, ERAS, TIME_SCALES } from './constants.js';
 import { EventBus } from './eventBus.js';
 import { Registry } from './registry.js';
 import { World } from '../world/world.js';
-import { Renderer } from '../ui/renderer.js';
-import { Camera } from '../ui/camera.js';
+import { Renderer3D } from '../ui/renderer3d.js';
+import { Camera3D } from '../ui/camera3d.js';
 import { EntityManager } from '../entities/entityManager.js';
 import { WeatherSystem } from '../powers/weather.js';
 import { GodPowers } from '../powers/godPowers.js';
@@ -13,11 +13,14 @@ import { Minimap } from '../ui/minimap.js';
 import { SoundSystem } from '../ui/sound.js';
 import { CinematicCamera } from '../ui/cinematicCamera.js';
 import { AmbientMode } from '../ui/ambientMode.js';
+import { PlacementSystem } from '../ui/placementSystem.js';
 
 export class Game {
     constructor(canvas) {
         this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
+        // Keep 2D context reference for minimap / legacy use
+        this.ctx = null;
+        try { this.ctx = canvas.getContext('2d'); } catch(e) {}
 
         this.running = false;
         this.speed = 1;
@@ -28,28 +31,38 @@ export class Game {
 
         this.lastTime = 0;
         this.accumulator = 0;
-        this.tickRate = 1000 / 30; // 30 ticks per second at 1x speed
+        this.tickRate = 1000 / 30;
+
+        // Max ticks per frame - increased for high speed modes
+        this.maxTicksPerFrame = 10;
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
 
-        // Extension systems (initialize BEFORE other systems)
+        // Extension systems
         this.events = new EventBus();
         this.registry = new Registry();
 
         // Core systems
         this.world = new World();
-        this.camera = new Camera(this);
+        this.camera3d = new Camera3D(this);
         this.entityManager = new EntityManager(this);
         this.weather = new WeatherSystem(this);
         this.godPowers = new GodPowers(this);
         this.simulation = new SimulationEngine(this);
-        this.renderer = new Renderer(this);
+        this.renderer = new Renderer3D(this);
+        this.placementSystem = new PlacementSystem(this);
         this.ui = new UIManager(this);
         this.minimap = new Minimap(this);
         this.sound = new SoundSystem();
         this.cinematicCamera = new CinematicCamera(this);
         this.ambientMode = new AmbientMode(this);
+
+        // Legacy camera reference for compatibility
+        this.camera = this.camera3d;
+
+        // 3D canvas reference (set by renderer)
+        this.canvas3d = null;
 
         this.notifications = [];
     }
@@ -61,14 +74,24 @@ export class Game {
 
     init() {
         this.world.generate();
+
+        // Init 3D renderer (creates WebGL canvas)
+        this.renderer.init();
+
+        // Setup camera controls (needs canvas3d from renderer)
+        this.camera3d.setupControls();
+
         this.entityManager.spawnInitialEntities();
         this.minimap.init();
         this.ui.init();
+        this.placementSystem.init();
         this.ambientMode.init();
-        this.camera.centerOn(
+
+        this.camera3d.centerOn(
             this.world.spawnPoint.x,
             this.world.spawnPoint.y
         );
+
         this.running = true;
         this.notify('세계가 창조되었습니다.');
         this.lastTime = performance.now();
@@ -82,9 +105,10 @@ export class Game {
         if (this.running) {
             this.accumulator += delta * this.speed;
 
-            // Cap accumulator to prevent spiral of death
-            if (this.accumulator > this.tickRate * 10) {
-                this.accumulator = this.tickRate * 10;
+            // Dynamic cap based on speed
+            const maxTicks = this.speed >= 50 ? 100 : this.speed >= 10 ? 30 : 10;
+            if (this.accumulator > this.tickRate * maxTicks) {
+                this.accumulator = this.tickRate * maxTicks;
             }
 
             while (this.accumulator >= this.tickRate) {
@@ -135,8 +159,11 @@ export class Game {
     }
 
     render() {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // 3D render
+        this.camera3d.update();
         this.renderer.render();
+
+        // Minimap (uses its own 2D canvas)
         if (!this.ambientMode.active) {
             this.minimap.render();
         }
@@ -168,8 +195,6 @@ export class Game {
 
     notify(message) {
         this.notifications.push({ message, time: Date.now() });
-
-        // Forward to ambient mode
         this.ambientMode.onEvent(message);
 
         if (!this.ambientMode.active) {
@@ -184,6 +209,11 @@ export class Game {
 
     setSpeed(speed) {
         this.speed = speed;
+        if (speed === 0) {
+            this.running = false;
+        } else {
+            this.running = true;
+        }
     }
 
     pause() {

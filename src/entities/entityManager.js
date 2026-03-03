@@ -1,7 +1,10 @@
 import { Person } from './person.js';
 import { Animal } from './animal.js';
 import { Building } from './building.js';
-import { TERRAIN, ANIMAL_TYPE, BUILDING_TYPE } from '../core/constants.js';
+import { Giant } from './giant.js';
+import { Dinosaur } from './dinosaur.js';
+import { Vehicle } from './vehicle.js';
+import { TERRAIN, ANIMAL_TYPE, BUILDING_TYPE, DINOSAUR_TYPE, VEHICLE_TYPE, ERAS } from '../core/constants.js';
 
 export class EntityManager {
     constructor(game) {
@@ -9,42 +12,73 @@ export class EntityManager {
         this.people = [];
         this.animals = [];
         this.buildings = [];
-        this.trees = []; // Decorative trees
-        this.customEntities = []; // 레지스트리 기반 커스텀 엔티티
+        this.trees = [];
+        this.customEntities = [];
+        this.giants = [];
+        this.dinosaurs = [];
+        this.vehicles = [];
+
+        this.dinosaurEra = true;
+        this.dinosaurExtinctionTriggered = false;
     }
 
     spawnInitialEntities() {
         const sp = this.game.world.spawnPoint;
 
-        // Spawn initial people (a small tribe)
+        if (this.dinosaurEra) {
+            this.spawnInitialDinosaurs();
+        }
+
         for (let i = 0; i < 12; i++) {
             const ox = (Math.random() - 0.5) * 10;
             const oy = (Math.random() - 0.5) * 10;
             const px = sp.x + ox;
             const py = sp.y + oy;
             if (this.game.world.isWalkable(Math.floor(px), Math.floor(py))) {
-                const age = 15 + Math.random() * 25;
-                this.people.push(new Person(this.game, px, py, { age }));
+                this.people.push(new Person(this.game, px, py, { age: 15 + Math.random() * 25 }));
             }
         }
 
-        // A couple of children
         for (let i = 0; i < 3; i++) {
             const ox = (Math.random() - 0.5) * 8;
             const oy = (Math.random() - 0.5) * 8;
             this.people.push(new Person(this.game, sp.x + ox, sp.y + oy, { age: 3 + Math.random() * 8 }));
         }
 
-        // Initial huts
         for (let i = 0; i < 3; i++) {
             this.tryBuildNear(sp, 'HUT');
         }
 
-        // Animals scattered across the map
         this.spawnAnimals();
-
-        // Decorative trees in forests
         this.spawnTrees();
+    }
+
+    spawnInitialDinosaurs() {
+        const world = this.game.world;
+        const dinoConfigs = [
+            { type: 'TREX', count: 5 },
+            { type: 'TRICERATOPS', count: 8 },
+            { type: 'RAPTOR', count: 10 },
+            { type: 'BRONTO', count: 4 },
+            { type: 'PTERANODON', count: 6 },
+            { type: 'STEGO', count: 6 },
+        ];
+
+        for (const dc of dinoConfigs) {
+            let spawned = 0;
+            let attempts = 0;
+            while (spawned < dc.count && attempts < dc.count * 20) {
+                attempts++;
+                const x = Math.random() * world.width;
+                const y = Math.random() * world.height;
+                const terrain = world.getTerrain(Math.floor(x), Math.floor(y));
+                if (terrain !== TERRAIN.DEEP_WATER && terrain !== TERRAIN.SHALLOW_WATER &&
+                    terrain !== TERRAIN.SNOW_PEAK) {
+                    this.dinosaurs.push(new Dinosaur(this.game, x, y, dc.type));
+                    spawned++;
+                }
+            }
+        }
     }
 
     spawnAnimals() {
@@ -94,7 +128,6 @@ export class EntityManager {
     update() {
         const events = this.game.events;
 
-        // Update people
         for (let i = this.people.length - 1; i >= 0; i--) {
             this.people[i].update();
             if (!this.people[i].alive) {
@@ -103,7 +136,6 @@ export class EntityManager {
             }
         }
 
-        // Update animals
         for (let i = this.animals.length - 1; i >= 0; i--) {
             this.animals[i].update();
             if (!this.animals[i].alive) {
@@ -112,7 +144,6 @@ export class EntityManager {
             }
         }
 
-        // Update buildings
         for (let i = this.buildings.length - 1; i >= 0; i--) {
             this.buildings[i].update();
             if (this.buildings[i].health <= 0) {
@@ -121,12 +152,32 @@ export class EntityManager {
             }
         }
 
-        // Update custom entities (registry-based)
+        for (let i = this.giants.length - 1; i >= 0; i--) {
+            this.giants[i].update();
+            if (!this.giants[i].alive) {
+                events.emit('entity:died', this.giants[i], 'giant');
+                this.giants.splice(i, 1);
+            }
+        }
+
+        for (let i = this.dinosaurs.length - 1; i >= 0; i--) {
+            this.dinosaurs[i].update();
+            if (!this.dinosaurs[i].alive) {
+                events.emit('entity:died', this.dinosaurs[i], 'dinosaur');
+                this.dinosaurs.splice(i, 1);
+            }
+        }
+
+        for (let i = this.vehicles.length - 1; i >= 0; i--) {
+            this.vehicles[i].update();
+            if (!this.vehicles[i].alive) {
+                this.vehicles.splice(i, 1);
+            }
+        }
+
         for (let i = this.customEntities.length - 1; i >= 0; i--) {
             const ce = this.customEntities[i];
-            if (ce.def.behavior) {
-                ce.def.behavior(ce, this.game, 1);
-            }
+            if (ce.def.behavior) ce.def.behavior(ce, this.game, 1);
             if (!ce.alive) {
                 if (ce.def.onDeath) ce.def.onDeath(ce, this.game);
                 events.emit('entity:died', ce, ce.def.type);
@@ -134,12 +185,126 @@ export class EntityManager {
             }
         }
 
-        // Periodically replenish animals
-        if (this.game.tick % 3000 === 0) {
-            if (this.animals.length < 50) {
-                this.spawnRandomAnimal();
+        // Dinosaur extinction
+        if (this.dinosaurEra && !this.dinosaurExtinctionTriggered && this.game.year >= 3) {
+            this.triggerDinosaurExtinction();
+        }
+
+        if (this.game.tick % 3000 === 0 && this.animals.length < 50) {
+            this.spawnRandomAnimal();
+        }
+
+        if (this.game.tick % 2000 === 0) {
+            this.manageVehicles();
+        }
+    }
+
+    triggerDinosaurExtinction() {
+        this.dinosaurExtinctionTriggered = true;
+        this.game.notify('🌠 하늘에서 거대한 운석이 떨어집니다!');
+
+        const center = this.game.world.spawnPoint;
+        if (this.game.renderer?.addShockwave) {
+            this.game.renderer.addShockwave(center.x, center.y, 50, '#ff4400');
+            this.game.renderer.addParticleEffect(center.x, center.y, 'large', '#ff6600');
+        }
+        if (this.game.camera3d) this.game.camera3d.shake(5, 60);
+        else if (this.game.camera?.shake) this.game.camera.shake(15, 60);
+
+        for (const dino of this.dinosaurs) {
+            dino.health -= 80;
+        }
+
+        this.game.notify('💥 대멸종! 공룡들이 사라지고 있습니다...');
+        this.dinosaurEra = false;
+    }
+
+    manageVehicles() {
+        const techLevel = this.game.simulation.techLevel;
+        const maxVehicles = Math.min(20, Math.floor(techLevel / 100));
+        if (this.vehicles.length >= maxVehicles) return;
+
+        const availableTypes = [];
+        for (const [type, config] of Object.entries(VEHICLE_TYPE)) {
+            const era = ERAS.find(e => e.id === config.eraId);
+            if (era && techLevel >= era.techRequired) {
+                availableTypes.push(type);
             }
         }
+        if (availableTypes.length === 0) return;
+
+        const world = this.game.world;
+        for (let attempt = 0; attempt < 30; attempt++) {
+            const x = Math.random() * world.width;
+            const y = Math.random() * world.height;
+            if (world.getTerrain(Math.floor(x), Math.floor(y)) === TERRAIN.ROAD) {
+                const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+                this.vehicles.push(new Vehicle(this.game, x, y, type));
+                return;
+            }
+        }
+    }
+
+    spawnPersonAt(x, y, options = {}) {
+        if (!this.game.world.isWalkable(Math.floor(x), Math.floor(y))) return null;
+        const person = new Person(this.game, x, y, options);
+        this.people.push(person);
+        this.game.events.emit('entity:spawned', person, 'person');
+        return person;
+    }
+
+    spawnGiant(x, y, size) {
+        if (!this.game.world.isWalkable(Math.floor(x), Math.floor(y))) return null;
+        const giant = new Giant(this.game, x, y, { size });
+        this.giants.push(giant);
+        this.game.events.emit('entity:spawned', giant, 'giant');
+        return giant;
+    }
+
+    spawnAnimalAt(x, y, type) {
+        const animal = new Animal(this.game, x, y, type);
+        this.animals.push(animal);
+        this.game.events.emit('entity:spawned', animal, 'animal');
+        return animal;
+    }
+
+    spawnDinosaur(x, y, type) {
+        if (!DINOSAUR_TYPE[type]) return null;
+        const dino = new Dinosaur(this.game, x, y, type);
+        this.dinosaurs.push(dino);
+        this.game.events.emit('entity:spawned', dino, 'dinosaur');
+        return dino;
+    }
+
+    tryBuildAt(x, y, buildingType) {
+        const size = BUILDING_TYPE[buildingType]?.size || 1;
+        if (!this.canPlaceBuilding(x, y, size)) return null;
+        const building = new Building(this.game, x, y, buildingType);
+        this.buildings.push(building);
+        const world = this.game.world;
+        for (let dy = -1; dy <= size; dy++) {
+            for (let dx = -1; dx <= size; dx++) {
+                if (dx === -1 || dy === -1 || dx === size || dy === size) {
+                    const rx = x + dx, ry = y + dy;
+                    if (world.getTerrain(rx, ry) === TERRAIN.GRASS) {
+                        world.setTerrain(rx, ry, TERRAIN.ROAD);
+                    }
+                }
+            }
+        }
+        if (buildingType === 'FARM') {
+            for (let dy = -1; dy <= size; dy++) {
+                for (let dx = -1; dx <= size; dx++) {
+                    const fx = x + dx, fy = y + dy;
+                    const t = world.getTerrain(fx, fy);
+                    if (t === TERRAIN.GRASS || t === TERRAIN.FOREST) {
+                        world.setTerrain(fx, fy, TERRAIN.FARMLAND);
+                    }
+                }
+            }
+        }
+        this.game.events.emit('building:built', building);
+        return building;
     }
 
     spawnRandomAnimal() {
@@ -161,18 +326,14 @@ export class EntityManager {
     tryBuildNear(center, buildingType) {
         const world = this.game.world;
         const size = BUILDING_TYPE[buildingType]?.size || 1;
-
         for (let r = 1; r < 20; r++) {
             for (let attempts = 0; attempts < r * 4; attempts++) {
                 const angle = Math.random() * Math.PI * 2;
                 const x = Math.floor(center.x + Math.cos(angle) * r);
                 const y = Math.floor(center.y + Math.sin(angle) * r);
-
                 if (this.canPlaceBuilding(x, y, size)) {
                     const building = new Building(this.game, x, y, buildingType);
                     this.buildings.push(building);
-
-                    // Mark terrain as road nearby
                     for (let dy = -1; dy <= size; dy++) {
                         for (let dx = -1; dx <= size; dx++) {
                             if (dx === -1 || dy === -1 || dx === size || dy === size) {
@@ -183,9 +344,7 @@ export class EntityManager {
                             }
                         }
                     }
-
                     if (buildingType === 'FARM') {
-                        // Mark surrounding as farmland
                         for (let dy = -1; dy <= size; dy++) {
                             for (let dx = -1; dx <= size; dx++) {
                                 const fx = x + dx, fy = y + dy;
@@ -209,17 +368,12 @@ export class EntityManager {
             for (let dx = 0; dx < size; dx++) {
                 const t = world.getTerrain(x + dx, y + dy);
                 if (t === TERRAIN.DEEP_WATER || t === TERRAIN.SHALLOW_WATER ||
-                    t === TERRAIN.MOUNTAIN || t === TERRAIN.SNOW_PEAK) {
-                    return false;
-                }
+                    t === TERRAIN.MOUNTAIN || t === TERRAIN.SNOW_PEAK) return false;
             }
         }
-        // Check no overlapping buildings
         for (const b of this.buildings) {
             if (Math.abs(b.x - x) < Math.max(size, b.size) + 1 &&
-                Math.abs(b.y - y) < Math.max(size, b.size) + 1) {
-                return false;
-            }
+                Math.abs(b.y - y) < Math.max(size, b.size) + 1) return false;
         }
         return true;
     }
@@ -227,24 +381,16 @@ export class EntityManager {
     getSettlementCenter() {
         if (this.buildings.length === 0) return this.game.world.spawnPoint;
         let cx = 0, cy = 0;
-        for (const b of this.buildings) {
-            cx += b.x;
-            cy += b.y;
-        }
+        for (const b of this.buildings) { cx += b.x; cy += b.y; }
         return { x: cx / this.buildings.length, y: cy / this.buildings.length };
     }
 
     tryPopulationGrowth() {
         const couples = this.people.filter(p =>
-            p.alive && p.spouse && p.age >= 18 && p.age <= 45 && p.gender === 'female'
-        );
-
+            p.alive && p.spouse && p.age >= 18 && p.age <= 45 && p.gender === 'female');
         for (const mother of couples) {
             if (Math.random() < 0.3 && this.game.simulation.foodSupply > this.people.length) {
-                const child = new Person(this.game, mother.x, mother.y, {
-                    age: 0,
-                    lastName: mother.lastName,
-                });
+                const child = new Person(this.game, mother.x, mother.y, { age: 0, lastName: mother.lastName });
                 mother.children.push(child);
                 if (mother.spouse) mother.spouse.children.push(child);
                 this.people.push(child);
@@ -264,116 +410,69 @@ export class EntityManager {
     }
 
     getEntityAt(worldX, worldY, radius = 1) {
-        // Check custom entities first (they're usually special/important)
+        const r2 = radius * radius;
+        for (const g of this.giants) {
+            if (!g.alive) continue;
+            const dx = g.x - worldX, dy = g.y - worldY;
+            if (dx * dx + dy * dy < r2 * 4) return { type: 'giant', entity: g };
+        }
+        for (const d of this.dinosaurs) {
+            if (!d.alive) continue;
+            const dx = d.x - worldX, dy = d.y - worldY;
+            if (dx * dx + dy * dy < r2 * 4) return { type: 'dinosaur', entity: d };
+        }
         for (const ce of this.customEntities) {
             if (!ce.alive) continue;
-            const dx = ce.x - worldX;
-            const dy = ce.y - worldY;
-            if (dx * dx + dy * dy < radius * radius) return { type: ce.def.type, entity: ce };
+            const dx = ce.x - worldX, dy = ce.y - worldY;
+            if (dx * dx + dy * dy < r2) return { type: ce.def.type, entity: ce };
         }
-        // Check people
         for (const p of this.people) {
             if (!p.alive) continue;
-            const dx = p.x - worldX;
-            const dy = p.y - worldY;
-            if (dx * dx + dy * dy < radius * radius) return { type: 'person', entity: p };
+            const dx = p.x - worldX, dy = p.y - worldY;
+            if (dx * dx + dy * dy < r2) return { type: 'person', entity: p };
         }
-        // Check buildings
         for (const b of this.buildings) {
-            if (worldX >= b.x && worldX < b.x + b.size &&
-                worldY >= b.y && worldY < b.y + b.size) {
+            if (worldX >= b.x && worldX < b.x + b.size && worldY >= b.y && worldY < b.y + b.size)
                 return { type: 'building', entity: b };
-            }
         }
-        // Check animals
         for (const a of this.animals) {
             if (!a.alive) continue;
-            const dx = a.x - worldX;
-            const dy = a.y - worldY;
-            if (dx * dx + dy * dy < radius * radius) return { type: 'animal', entity: a };
+            const dx = a.x - worldX, dy = a.y - worldY;
+            if (dx * dx + dy * dy < r2) return { type: 'animal', entity: a };
         }
         return null;
     }
 
-    // ===== 커스텀 엔티티 스폰 (레지스트리 기반) =====
-
-    /**
-     * 레지스트리에 등록된 커스텀 엔티티 스폰
-     * @param {string} type - 등록된 타입 이름 (예: 'batman', 'dragon')
-     * @param {number} x - 월드 X 좌표
-     * @param {number} y - 월드 Y 좌표
-     * @param {Object} overrides - 속성 오버라이드 (선택)
-     * @returns {Object|null} 생성된 엔티티
-     */
     spawnCustom(type, x, y, overrides = {}) {
         const def = this.game.registry.getEntity(type);
-        if (!def) {
-            console.warn(`[EntityManager] Unknown entity type: '${type}'`);
-            return null;
-        }
-
+        if (!def) return null;
         const entity = {
-            x, y,
-            alive: true,
-            def,
-            target: null,
-            health: def.config.health || 100,
-            speed: def.config.speed || 1,
-            size: def.config.size || 1,
-            color: def.config.color || '#ff00ff',
-            data: {}, // 자유 데이터 저장소
-            ...overrides,
-
-            // 유틸리티 메서드
+            x, y, alive: true, def, target: null,
+            health: def.config.health || 100, speed: def.config.speed || 1,
+            size: def.config.size || 1, color: def.config.color || '#ff00ff',
+            data: {}, ...overrides,
             moveTo(tx, ty) {
-                const dx = tx - this.x;
-                const dy = ty - this.y;
+                const dx = tx - this.x, dy = ty - this.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > 0.1) {
-                    this.x += (dx / dist) * this.speed * 0.05;
-                    this.y += (dy / dist) * this.speed * 0.05;
-                }
+                if (dist > 0.1) { this.x += (dx / dist) * this.speed * 0.05; this.y += (dy / dist) * this.speed * 0.05; }
             },
-            distanceTo(other) {
-                const dx = this.x - (other.x || 0);
-                const dy = this.y - (other.y || 0);
-                return Math.sqrt(dx * dx + dy * dy);
-            },
-            kill() {
-                this.alive = false;
-            },
+            distanceTo(other) { const dx = this.x - (other.x||0), dy = this.y - (other.y||0); return Math.sqrt(dx*dx+dy*dy); },
+            kill() { this.alive = false; },
         };
-
         this.customEntities.push(entity);
-
-        // 이벤트 발행
         this.game.events.emit('entity:spawned', entity, type);
-
-        // onSpawn 콜백
         if (def.onSpawn) def.onSpawn(entity, this.game);
-
-        // 이벤트 리액션 등록
         if (def.reactions) {
             for (const [event, handler] of Object.entries(def.reactions)) {
-                this.game.events.on(event, (...args) => {
-                    if (entity.alive) handler(entity, ...args);
-                });
+                this.game.events.on(event, (...args) => { if (entity.alive) handler(entity, ...args); });
             }
         }
-
         return entity;
     }
 
-    /**
-     * 특정 위치에 나무 스폰
-     * @param {number} x - 월드 X 좌표
-     * @param {number} y - 월드 Y 좌표
-     * @param {number} size - 나무 크기 (기본 5)
-     */
     spawnTree(x, y, size = 5) {
         const tree = {
-            x, y,
-            size: size,
+            x, y, size,
             color: `hsl(${120 + Math.random() * 30}, ${40 + Math.random() * 20}%, ${20 + Math.random() * 15}%)`,
         };
         this.trees.push(tree);

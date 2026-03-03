@@ -8,6 +8,7 @@ function showTitleScreen() {
 
     document.getElementById('hud').style.display = 'none';
     document.getElementById('minimap-container').style.display = 'none';
+    document.getElementById('placement-panel').style.display = 'none';
 
     let frame = 0;
     const stars = [];
@@ -55,23 +56,25 @@ function showTitleScreen() {
         ctx.font = '24px serif';
         ctx.fillStyle = '#c4a040';
         ctx.fillText('God Simulation', canvas.width / 2, titleY + 40);
+
+        ctx.font = '16px serif';
+        ctx.fillStyle = '#8a7030';
+        ctx.fillText('3D Diorama Edition', canvas.width / 2, titleY + 68);
         ctx.shadowBlur = 0;
 
         const pulse = 0.5 + Math.sin(frame * 0.04) * 0.3;
 
-        // Game mode
         ctx.fillStyle = `rgba(255,255,255,${pulse})`;
         ctx.font = '20px sans-serif';
         ctx.fillText('클릭: 게임 모드', canvas.width / 2, titleY + 120);
 
-        // Ambient mode
         ctx.fillStyle = `rgba(200,180,100,${pulse * 0.8})`;
         ctx.font = '18px sans-serif';
         ctx.fillText('A키: 관상 모드 (바닥 모니터/스크린세이버)', canvas.width / 2, titleY + 155);
 
         ctx.fillStyle = 'rgba(255,255,255,0.25)';
         ctx.font = '13px sans-serif';
-        ctx.fillText('드래그: 이동 | 스크롤: 확대/축소 | F: 전체화면 | A: 관상 모드', canvas.width / 2, canvas.height - 40);
+        ctx.fillText('드래그: 이동 | 스크롤: 확대/축소 | Q/E: 회전 | 우클릭: 시점 회전 | F: 전체화면', canvas.width / 2, canvas.height - 40);
 
         ctx.textAlign = 'start';
 
@@ -84,6 +87,7 @@ function showTitleScreen() {
 
         document.getElementById('hud').style.display = '';
         document.getElementById('minimap-container').style.display = '';
+        document.getElementById('placement-panel').style.display = '';
 
         const game = new Game(canvas);
         game.sound.init();
@@ -112,15 +116,14 @@ function showTitleScreen() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-    // Support URL parameter for auto-ambient mode: index.html?ambient=true
     const params = new URLSearchParams(window.location.search);
     if (params.get('ambient') === 'true') {
-        // Skip title screen, go directly to ambient mode
         const canvas = document.getElementById('game-canvas');
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         document.getElementById('hud').style.display = 'none';
         document.getElementById('minimap-container').style.display = 'none';
+        document.getElementById('placement-panel').style.display = 'none';
 
         const game = new Game(canvas);
         game.sound.init();
@@ -128,7 +131,6 @@ window.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => game.ambientMode.toggle(), 300);
         window.game = game;
 
-        // Enable audio on first interaction
         const enableAudio = () => {
             game.sound.resume();
             if (game.sound.startBGM) game.sound.startBGM();

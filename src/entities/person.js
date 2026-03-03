@@ -1,4 +1,4 @@
-import { NPC_STATE, TICKS_PER_DAY, TERRAIN } from '../core/constants.js';
+import { NPC_STATE, TICKS_PER_DAY, TERRAIN, PERSONALITY } from '../core/constants.js';
 
 // Korean name pools
 const LAST_NAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송', '류', '홍'];
@@ -28,6 +28,17 @@ export class Person {
         this.intelligence = 20 + Math.random() * 30;
         this.strength = 20 + Math.random() * 30;
 
+        // Personality system
+        this.personality = options.personality || 'NORMAL';
+        const pConfig = PERSONALITY[this.personality];
+        if (pConfig) {
+            if (pConfig.intelligence) this.intelligence *= pConfig.intelligence;
+            if (pConfig.strength) this.strength *= pConfig.strength;
+            if (pConfig.charisma) this.charisma = pConfig.charisma;
+        }
+        this.charisma = this.charisma || 1.0;
+        this.criminalActivity = 0; // criminal behavior counter
+
         this.state = NPC_STATE.IDLE;
         this.stateTimer = 0;
         this.targetX = x;
@@ -36,8 +47,8 @@ export class Person {
         this.pathIndex = 0;
         this.speed = 0.03 + Math.random() * 0.02;
 
-        this.home = null;     // Building reference
-        this.workplace = null; // Building reference
+        this.home = null;
+        this.workplace = null;
         this.spouse = null;
         this.children = [];
         this.alive = true;
@@ -47,7 +58,11 @@ export class Person {
 
         // Visual
         this.size = this.age < 15 ? 3 : 4;
-        this.color = this.gender === 'male' ? '#4488cc' : '#cc4488';
+        this.color = pConfig ? pConfig.color : (this.gender === 'male' ? '#4488cc' : '#cc4488');
+
+        // Reaction state
+        this.fearTarget = null;
+        this.inspireBoost = 0;
     }
 
     update() {
@@ -55,7 +70,7 @@ export class Person {
 
         this.stateTimer++;
 
-        // Aging (1 year per ~TICKS_PER_YEAR game ticks, but faster for gameplay)
+        // Aging
         if (this.game.tick % (TICKS_PER_DAY * 10) === 0) {
             this.age += 0.5;
             this.size = this.age < 15 ? 3 : 4;
@@ -89,13 +104,143 @@ export class Person {
             }
         }
 
+        // Personality-specific behaviors
+        this.personalityBehavior();
+
+        // Inspire boost decay
+        if (this.inspireBoost > 0) this.inspireBoost -= 0.01;
+
         // AI behavior
         this.think();
         this.move();
     }
 
+    personalityBehavior() {
+        switch (this.personality) {
+            case 'CRIMINAL':
+                // Occasionally steal food or lower others' happiness
+                if (this.game.tick % 200 === 0 && Math.random() < 0.3) {
+                    this.criminalActivity++;
+                    const nearby = this.game.entityManager.findNearbyPerson(this, 5);
+                    if (nearby) {
+                        nearby.happiness = Math.max(0, nearby.happiness - 3);
+                        this.game.simulation.foodSupply += 1; // steal food
+                        if (this.criminalActivity % 5 === 0) {
+                            this.game.notify(`${this.name}이(가) 범죄를 저질렀습니다!`);
+                        }
+                    }
+                }
+                break;
+            case 'HEALER':
+                // Periodically heal nearby people
+                if (this.game.tick % 150 === 0) {
+                    const nearby = this.game.entityManager.findNearbyPerson(this, 5);
+                    if (nearby && nearby.health < 80) {
+                        nearby.health = Math.min(100, nearby.health + 10);
+                        nearby.happiness = Math.min(100, nearby.happiness + 2);
+                    }
+                }
+                break;
+            case 'LEADER':
+                // Boost nearby people's work output and happiness
+                if (this.game.tick % 100 === 0) {
+                    const em = this.game.entityManager;
+                    for (const p of em.people) {
+                        if (p === this || !p.alive) continue;
+                        const dx = p.x - this.x;
+                        const dy = p.y - this.y;
+                        if (dx * dx + dy * dy < 64) { // radius 8
+                            p.happiness = Math.min(100, p.happiness + 1);
+                            p.inspireBoost = 1.5;
+                        }
+                    }
+                }
+                break;
+            case 'SCHOLAR':
+                // Boost tech level
+                if (this.game.tick % 100 === 0 && this.state === NPC_STATE.WORKING) {
+                    this.game.simulation.techLevel += this.intelligence * 0.001;
+                }
+                break;
+            case 'WARRIOR':
+                // Protect from criminals nearby
+                if (this.game.tick % 60 === 0) {
+                    const em = this.game.entityManager;
+                    for (const p of em.people) {
+                        if (p === this || !p.alive || p.personality !== 'CRIMINAL') continue;
+                        const dx = p.x - this.x;
+                        const dy = p.y - this.y;
+                        if (dx * dx + dy * dy < 36) { // radius 6
+                            p.flee(this.x, this.y);
+                            if (Math.random() < 0.1) {
+                                p.health -= 10;
+                                this.game.notify(`${this.name}이(가) ${p.name}을(를) 제압했습니다!`);
+                            }
+                        }
+                    }
+                }
+                break;
+        }
+    }
+
+    // React to a newly placed entity
+    reactTo(entity, distance) {
+        // Giant reaction
+        if (entity.constructor?.name === 'Giant' || entity.giantSize) {
+            if (distance < 5) {
+                this.setState(NPC_STATE.COWERING);
+                this.happiness = Math.max(0, this.happiness - 10);
+            } else {
+                this.flee(entity.x, entity.y);
+                this.happiness = Math.max(0, this.happiness - 5);
+            }
+            this.game.notify(`${this.name}이(가) 거인을 보고 두려워합니다!`);
+            return;
+        }
+
+        // Dinosaur reaction
+        if (entity.constructor?.name === 'Dinosaur') {
+            this.flee(entity.x, entity.y);
+            this.happiness = Math.max(0, this.happiness - 15);
+            return;
+        }
+
+        // Person with personality reaction
+        if (entity.personality) {
+            const pConfig = PERSONALITY[entity.personality];
+            if (!pConfig) return;
+
+            if (pConfig.threat > 0.5) {
+                // Criminal - flee
+                if (distance < 8) {
+                    this.flee(entity.x, entity.y);
+                    this.happiness = Math.max(0, this.happiness - 5);
+                    if (Math.random() < 0.3) {
+                        this.game.notify(`${this.name}이(가) 수상한 인물을 보고 피합니다.`);
+                    }
+                }
+            } else if (pConfig.effect === 'inspire') {
+                // Leader - approach
+                this.happiness = Math.min(100, this.happiness + 5);
+                this.inspireBoost = 1.5;
+                if (Math.random() < 0.3) {
+                    this.game.notify(`${this.name}이(가) 지도자에게 감화받았습니다.`);
+                }
+            } else if (pConfig.effect === 'heal') {
+                // Healer - be happy
+                this.happiness = Math.min(100, this.happiness + 3);
+                this.health = Math.min(100, this.health + 5);
+            } else if (pConfig.effect === 'educate') {
+                // Scholar - boost intelligence
+                this.intelligence = Math.min(100, this.intelligence + 2);
+            } else if (pConfig.effect === 'protect') {
+                // Warrior - feel safe
+                this.happiness = Math.min(100, this.happiness + 2);
+            }
+        }
+    }
+
     think() {
-        // State machine AI
         const timeOfDay = this.game.timeOfDay;
         const isDaytime = this.game.isDaytime;
 
@@ -125,8 +270,9 @@ export class Person {
 
             case NPC_STATE.WORKING:
                 if (this.stateTimer > 200) {
-                    this.workOutput += this.strength * 0.1;
-                    this.game.simulation.techLevel += this.intelligence * 0.0001;
+                    const boost = this.inspireBoost > 0 ? this.inspireBoost : 1;
+                    this.workOutput += this.strength * 0.1 * boost;
+                    this.game.simulation.techLevel += this.intelligence * 0.0001 * boost;
                     this.energy -= 5;
                     this.hunger += 3;
                     this.setState(NPC_STATE.IDLE);
@@ -154,7 +300,6 @@ export class Person {
 
             case NPC_STATE.SOCIALIZING:
                 if (this.stateTimer > 60) {
-                    // Find nearby person to socialize with
                     const nearby = this.game.entityManager.findNearbyPerson(this, 5);
                     if (nearby) {
                         this.happiness = Math.min(100, this.happiness + 5);
@@ -191,13 +336,26 @@ export class Person {
                     this.setState(NPC_STATE.IDLE);
                 }
                 break;
+
+            case NPC_STATE.COWERING:
+                if (this.stateTimer > 120) {
+                    this.setState(NPC_STATE.IDLE);
+                }
+                break;
+
+            case NPC_STATE.FIGHTING:
+                if (this.stateTimer > 80) {
+                    this.setState(NPC_STATE.IDLE);
+                }
+                break;
         }
 
         if (this.socialCooldown > 0) this.socialCooldown--;
     }
 
     move() {
-        if (this.state === NPC_STATE.SLEEPING || this.state === NPC_STATE.EATING) return;
+        if (this.state === NPC_STATE.SLEEPING || this.state === NPC_STATE.EATING ||
+            this.state === NPC_STATE.COWERING) return;
 
         if (this.path && this.pathIndex < this.path.length) {
             const target = this.path[this.pathIndex];
@@ -214,7 +372,6 @@ export class Person {
                 this.y += (dy / dist) * this.speed;
             }
         } else if (this.state === NPC_STATE.WALKING || this.state === NPC_STATE.FLEEING) {
-            // Simple direct movement toward target
             const dx = this.targetX - this.x;
             const dy = this.targetY - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
@@ -283,7 +440,10 @@ export class Person {
             [NPC_STATE.BUILDING]: '건설 중',
             [NPC_STATE.GATHERING]: '채집 중',
             [NPC_STATE.FLEEING]: '도망 중',
+            [NPC_STATE.COWERING]: '겁먹은 상태',
+            [NPC_STATE.FIGHTING]: '싸우는 중',
         };
+        const pConfig = PERSONALITY[this.personality];
         return {
             name: this.name,
             gender: this.gender === 'male' ? '남성' : '여성',
@@ -296,6 +456,8 @@ export class Person {
             intelligence: Math.floor(this.intelligence),
             strength: Math.floor(this.strength),
             spouse: this.spouse ? this.spouse.name : '없음',
+            personality: pConfig ? pConfig.name : '평범',
+            personalityIcon: pConfig ? pConfig.icon : '👤',
         };
     }
 }

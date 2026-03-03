@@ -1,4 +1,4 @@
-import { TERRAIN, TERRAIN_COLORS, ERAS } from '../core/constants.js';
+import { TERRAIN, TERRAIN_COLORS, ERAS, TIME_SCALES, PERSONALITY, VEHICLE_TYPE } from '../core/constants.js';
 
 export class UIManager {
     constructor(game) {
@@ -6,26 +6,25 @@ export class UIManager {
     }
 
     init() {
-        // Speed controls
-        document.getElementById('btn-pause').addEventListener('click', () => {
-            this.game.pause();
-            this.updateSpeedButtons(-1);
-        });
-        document.getElementById('btn-speed1').addEventListener('click', () => {
-            this.game.running = true;
-            this.game.setSpeed(1);
-            this.updateSpeedButtons(0);
-        });
-        document.getElementById('btn-speed2').addEventListener('click', () => {
-            this.game.running = true;
-            this.game.setSpeed(2);
-            this.updateSpeedButtons(1);
-        });
-        document.getElementById('btn-speed3').addEventListener('click', () => {
-            this.game.running = true;
-            this.game.setSpeed(5);
-            this.updateSpeedButtons(2);
-        });
+        // Speed controls - use TIME_SCALES
+        const speedBar = document.getElementById('speed-controls');
+        if (speedBar) {
+            speedBar.innerHTML = '';
+            for (let i = 0; i < TIME_SCALES.length; i++) {
+                const ts = TIME_SCALES[i];
+                const btn = document.createElement('button');
+                btn.className = 'speed-btn' + (i === 1 ? ' active' : '');
+                btn.title = ts.label;
+                btn.textContent = ts.icon;
+                btn.dataset.speedIndex = i;
+                btn.addEventListener('click', () => {
+                    this.game.setSpeed(ts.speed);
+                    speedBar.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                });
+                speedBar.appendChild(btn);
+            }
+        }
 
         // God power buttons
         const powerBtns = document.querySelectorAll('.power-btn');
@@ -33,14 +32,14 @@ export class UIManager {
             btn.addEventListener('click', () => {
                 const power = btn.dataset.power;
                 this.game.godPowers.selectPower(power);
-
-                // Update UI
                 powerBtns.forEach(b => b.classList.remove('active'));
                 if (this.game.godPowers.activePower === power) {
                     btn.classList.add('active');
-                    this.game.canvas.style.cursor = 'crosshair';
+                    const canvas = this.game.canvas3d || this.game.canvas;
+                    canvas.style.cursor = 'crosshair';
                 } else {
-                    this.game.canvas.style.cursor = 'grab';
+                    const canvas = this.game.canvas3d || this.game.canvas;
+                    canvas.style.cursor = 'grab';
                 }
             });
         });
@@ -74,59 +73,61 @@ export class UIManager {
     }
 
     update() {
-        if (this.game.tick % 15 !== 0) return; // Update HUD every 15 ticks
+        if (this.game.tick % 15 !== 0) return;
 
         const sim = this.game.simulation;
         const em = this.game.entityManager;
 
-        // Time of day icon
         const t = this.game.timeOfDay;
         const timeIcon = document.getElementById('time-icon');
         const timeLabel = document.getElementById('time-label');
         const timeIndicator = document.getElementById('time-indicator');
         if (timeIcon && timeLabel && timeIndicator) {
             if (t < 0.2 || t > 0.82) {
-                timeIcon.textContent = '🌙';
-                timeLabel.textContent = '밤';
+                timeIcon.textContent = '🌙'; timeLabel.textContent = '밤';
                 timeIndicator.style.background = 'rgba(20,20,60,0.6)';
                 timeIndicator.style.borderColor = 'rgba(100,120,200,0.4)';
             } else if (t < 0.28) {
-                timeIcon.textContent = '🌅';
-                timeLabel.textContent = '새벽';
+                timeIcon.textContent = '🌅'; timeLabel.textContent = '새벽';
                 timeIndicator.style.background = 'rgba(60,30,20,0.5)';
                 timeIndicator.style.borderColor = 'rgba(255,150,50,0.4)';
             } else if (t > 0.72) {
-                timeIcon.textContent = '🌇';
-                timeLabel.textContent = '저녁';
+                timeIcon.textContent = '🌇'; timeLabel.textContent = '저녁';
                 timeIndicator.style.background = 'rgba(60,20,30,0.5)';
                 timeIndicator.style.borderColor = 'rgba(255,100,50,0.4)';
             } else {
-                timeIcon.textContent = '☀️';
-                timeLabel.textContent = '낮';
+                timeIcon.textContent = '☀️'; timeLabel.textContent = '낮';
                 timeIndicator.style.background = 'rgba(0,0,0,0.4)';
                 timeIndicator.style.borderColor = 'rgba(255,255,255,0.15)';
             }
         }
 
-        document.getElementById('year-display').textContent =
-            `${this.game.year}년 ${this.game.currentSeason}`;
-        document.getElementById('population-display').textContent =
-            `인구: ${em.people.length}`;
-        document.getElementById('era-display').textContent =
-            `시대: ${this.game.currentEra.name}`;
-        document.getElementById('happiness-display').textContent =
-            `행복도: ${Math.floor(sim.happiness)}%`;
-        document.getElementById('food-display').textContent =
-            `식량: ${Math.floor(sim.foodSupply)}`;
-        document.getElementById('resource-display').textContent =
-            `🪵${Math.floor(sim.resources.wood)} 🪨${Math.floor(sim.resources.stone)}`;
-    }
+        const yearEl = document.getElementById('year-display');
+        if (yearEl) yearEl.textContent = `${this.game.year}년 ${this.game.currentSeason}`;
 
-    updateSpeedButtons(activeIdx) {
-        const buttons = ['btn-pause', 'btn-speed1', 'btn-speed2', 'btn-speed3'];
-        buttons.forEach((id, i) => {
-            document.getElementById(id).classList.toggle('active', i - 1 === activeIdx);
-        });
+        const popEl = document.getElementById('population-display');
+        if (popEl) {
+            let txt = `인구: ${em.people.length}`;
+            if (em.dinosaurs.length > 0) txt += ` | 🦖${em.dinosaurs.length}`;
+            if (em.giants.length > 0) txt += ` | 🗿${em.giants.length}`;
+            if (em.vehicles.length > 0) txt += ` | 🚗${em.vehicles.length}`;
+            popEl.textContent = txt;
+        }
+
+        const eraEl = document.getElementById('era-display');
+        if (eraEl) eraEl.textContent = `시대: ${this.game.currentEra.name}`;
+
+        const happEl = document.getElementById('happiness-display');
+        if (happEl) happEl.textContent = `행복도: ${Math.floor(sim.happiness)}%`;
+
+        const foodEl = document.getElementById('food-display');
+        if (foodEl) foodEl.textContent = `식량: ${Math.floor(sim.foodSupply)}`;
+
+        const resEl = document.getElementById('resource-display');
+        if (resEl) resEl.textContent = `🪵${Math.floor(sim.resources.wood)} 🪨${Math.floor(sim.resources.stone)}`;
+
+        const speedEl = document.getElementById('speed-display');
+        if (speedEl) speedEl.textContent = this.game.speed > 0 ? `${this.game.speed}x` : '⏸';
     }
 
     showEntityInfo(result) {
@@ -136,8 +137,10 @@ export class UIManager {
 
         if (result.type === 'person') {
             const info = result.entity.getInfo();
+            const pColor = PERSONALITY[result.entity.personality]?.color || '#fff';
             content.innerHTML = `
-                <h4>👤 ${info.name}</h4>
+                <h4>${info.personalityIcon} ${info.name}</h4>
+                <div class="stat"><span class="stat-label">성격</span><span class="stat-value" style="color:${pColor}">${info.personality}</span></div>
                 <div class="stat"><span class="stat-label">성별</span><span class="stat-value">${info.gender}</span></div>
                 <div class="stat"><span class="stat-label">나이</span><span class="stat-value">${info.age}세</span></div>
                 <div class="stat"><span class="stat-label">상태</span><span class="stat-value">${info.state}</span></div>
@@ -167,6 +170,23 @@ export class UIManager {
                 <div class="stat"><span class="stat-label">상태</span><span class="stat-value">${a.state}</span></div>
                 <div class="stat"><span class="stat-label">식성</span><span class="stat-value">${a.config.herbivore ? '초식' : '육식'}</span></div>
             `;
+        } else if (result.type === 'giant') {
+            const info = result.entity.getInfo();
+            content.innerHTML = `
+                <h4>🗿 ${info.name}</h4>
+                <div class="stat"><span class="stat-label">크기</span><span class="stat-value">${info.size}</span></div>
+                <div class="stat"><span class="stat-label">건강</span><span class="stat-value">${this.bar(info.health / 5)}</span></div>
+                <div class="stat"><span class="stat-label">상태</span><span class="stat-value">${info.state}</span></div>
+            `;
+        } else if (result.type === 'dinosaur') {
+            const info = result.entity.getInfo();
+            content.innerHTML = `
+                <h4>🦖 ${info.name}</h4>
+                <div class="stat"><span class="stat-label">종류</span><span class="stat-value">${info.diet}</span></div>
+                <div class="stat"><span class="stat-label">크기</span><span class="stat-value">${info.size}</span></div>
+                <div class="stat"><span class="stat-label">건강</span><span class="stat-value">${this.bar(info.health)}</span></div>
+                <div class="stat"><span class="stat-label">상태</span><span class="stat-value">${info.state}</span></div>
+            `;
         }
     }
 
@@ -174,22 +194,14 @@ export class UIManager {
         const world = this.game.world;
         const terrain = world.getTerrain(x, y);
         const terrainNames = {
-            [TERRAIN.DEEP_WATER]: '깊은 바다',
-            [TERRAIN.SHALLOW_WATER]: '얕은 물',
-            [TERRAIN.SAND]: '모래',
-            [TERRAIN.GRASS]: '초원',
-            [TERRAIN.FOREST]: '숲',
-            [TERRAIN.HILL]: '언덕',
-            [TERRAIN.MOUNTAIN]: '산',
-            [TERRAIN.SNOW_PEAK]: '눈 덮인 봉우리',
-            [TERRAIN.FARMLAND]: '농지',
-            [TERRAIN.ROAD]: '길',
+            [TERRAIN.DEEP_WATER]: '깊은 바다', [TERRAIN.SHALLOW_WATER]: '얕은 물',
+            [TERRAIN.SAND]: '모래', [TERRAIN.GRASS]: '초원', [TERRAIN.FOREST]: '숲',
+            [TERRAIN.HILL]: '언덕', [TERRAIN.MOUNTAIN]: '산', [TERRAIN.SNOW_PEAK]: '눈 덮인 봉우리',
+            [TERRAIN.FARMLAND]: '농지', [TERRAIN.ROAD]: '길',
         };
-
         const panel = document.getElementById('info-panel');
         const content = document.getElementById('info-content');
         panel.classList.remove('hidden');
-
         const fertility = world.getFertility(x, y);
         content.innerHTML = `
             <h4>🗺️ 지형 정보</h4>
@@ -203,6 +215,6 @@ export class UIManager {
         const filled = Math.floor(value / 10);
         const empty = 10 - filled;
         const color = value > 60 ? '#4c4' : value > 30 ? '#cc4' : '#c44';
-        return `<span style="color:${color}">${'█'.repeat(filled)}${'░'.repeat(empty)}</span> ${Math.floor(value)}`;
+        return `<span style="color:${color}">${'█'.repeat(Math.max(0, filled))}${'░'.repeat(Math.max(0, empty))}</span> ${Math.floor(value)}`;
     }
 }
